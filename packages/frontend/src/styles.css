@@ -1,0 +1,23 @@
+*, *::before, *::after { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, sans-serif;
+  background: #0f172a;
+  color: #e2e8f0;
+}
+.app-shell {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  grid-template-rows: 1fr 200px;
+  grid-template-areas:
+    "sidebar main"
+    "sidebar drawer";
+  height: 100vh;
+}
+.sidebar { grid-area: sidebar; background: #1e293b; border-right: 1px solid #334155; overflow-y: auto; }
+.main { grid-area: main; overflow: auto; padding: 16px; }
+.drawer { grid-area: drawer; background: #0b1220; border-top: 1px solid #334155; padding: 12px; }
+.sidebar-header { padding: 12px 14px; font-weight: 700; border-bottom: 1px solid #334155; }
+.sidebar-placeholder, .grid-placeholder, .drawer-placeholder {
+  color: #64748b; font-style: italic; padding: 12px;
+}
