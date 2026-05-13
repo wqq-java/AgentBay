@@ -1,0 +1,33 @@
+{
+  "name": "@claude-teams/daemon",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "claude-teams": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch --onSuccess 'node dist/index.js'",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@claude-teams/shared": "workspace:*",
+    "better-sqlite3": "^11.3.0",
+    "chokidar": "^4.0.0",
+    "express": "^4.21.0",
+    "ws": "^8.18.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.0",
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.0",
+    "tsup": "^8.3.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.0.0"
+  }
+}
