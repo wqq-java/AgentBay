@@ -1,15 +1,18 @@
+// AgentBay daemon 主入口(start 子命令调用):装配 db / scanner / sse / http。
+
 import type { AddressInfo } from 'node:net';
 import { openDb, closeDb } from './store/db.js';
-import { discoverObservedSessions } from './discovery/scan.js';
 import { startHttpServer } from './http/server.js';
-import { createHub } from './ws/hub.js';
-import { getClaudeProjectsDir } from './config/paths.js';
-import type { WsEvent } from '@agent-bay/shared';
+import { createSseHub } from './http/sse.js';
+import { createScanner } from './scanner/scanner.js';
 
 export interface DaemonOpts {
   port: number;
   dbPath: string;
-  claudeProjectsDir?: string;
+  /** scanner 轮询间隔(ms),默认 5000;测试可设 0 关闭周期 */
+  scanIntervalMs?: number;
+  /** 关闭 scanner 自启(测试用) */
+  noScanner?: boolean;
 }
 
 export interface DaemonHandle {
@@ -19,26 +22,26 @@ export interface DaemonHandle {
 
 export async function startDaemon(opts: DaemonOpts): Promise<DaemonHandle> {
   const db = openDb(opts.dbPath);
-  const projectsDir = opts.claudeProjectsDir ?? getClaudeProjectsDir();
+  const sse = createSseHub();
 
-  await discoverObservedSessions(db, projectsDir);
+  const http = await startHttpServer({ db, port: opts.port, sse });
 
-  // 先建一个 placeholder broadcast,等 http server 起来之后再换成真 hub
-  let realBroadcast: ((e: WsEvent) => void) | null = null;
-  const broadcast = (e: WsEvent) => {
-    realBroadcast?.(e);
-  };
-
-  const http = await startHttpServer({ db, port: opts.port, broadcast });
-  const hub = createHub(http.wss);
-  realBroadcast = hub.broadcast;
+  let stopScanner: (() => void) | null = null;
+  if (!opts.noScanner) {
+    const scanner = createScanner({
+      db,
+      broadcast: sse.broadcast,
+      intervalMs: opts.scanIntervalMs ?? 5000,
+    });
+    stopScanner = scanner.start();
+  }
 
   const addr = http.address() as AddressInfo;
 
   return {
     port: addr.port,
     async stop() {
-      hub.close();
+      stopScanner?.();
       await http.stop();
       closeDb(db);
     },

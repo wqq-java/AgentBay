@@ -1,54 +1,54 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useAppStore } from './state.js';
-import type { Workspace, Session, Agent } from '@agent-bay/shared';
+import type { Agent, Group, Topic, Message } from '@agent-bay/shared';
 
-const w1: Workspace = { id: 'w1', cwd: '/foo', label: 'foo', createdAt: 1 };
-const s1: Session = {
-  id: 's1', workspaceId: 'w1', mode: 'observed', pid: null, state: 'running',
-  jsonlPath: '/x.jsonl', jsonlOffset: 0, startedAt: 2, endedAt: null,
-};
 const a1: Agent = {
-  id: 's1:main', sessionId: 's1', name: 'main', role: null,
-  state: 'idle', tokenCount: 0, contextPct: 0, lastActivityAt: null,
+  id: '%0', name: 'alice', role: null, tmuxTarget: '%0', pid: 1,
+  tool: 'claude-code', status: 'online', statusMeta: null, groupId: null,
+  lastSeenAt: 1, createdAt: 1,
 };
+const g1: Group = { id: 'g1', name: 'team', description: null, isDm: false, createdAt: 1 };
+const t1: Topic = { id: 't1', groupId: 'g1', title: 'plan', state: 'open', resolvedAt: null, createdAt: 1, createdBy: null };
 
 describe('useAppStore', () => {
   beforeEach(() => {
-    useAppStore.setState({ workspaces: {}, sessions: {}, agents: {}, connected: false });
+    useAppStore.setState({
+      agents: {}, groups: {}, topics: {}, messagesByTopic: {},
+      connected: false, selectedAgentId: null, selectedGroupId: null, selectedTopicId: null,
+    });
   });
 
-  it('applySnapshot replaces state', () => {
-    useAppStore.getState().applySnapshot({
-      workspaces: [w1], sessions: [s1], agents: [a1],
-    });
+  it('applySnapshot replaces all', () => {
+    useAppStore.getState().applySnapshot({ agents: [a1], groups: [g1], topics: [t1] });
     const s = useAppStore.getState();
-    expect(s.workspaces['w1']).toEqual(w1);
-    expect(s.sessions['s1']).toEqual(s1);
-    expect(s.agents['s1:main']).toEqual(a1);
+    expect(s.agents['%0']).toEqual(a1);
+    expect(s.groups['g1']).toEqual(g1);
+    expect(s.topics['t1']).toEqual(t1);
   });
 
-  it('applyWsEvent session-created adds session', () => {
-    useAppStore.getState().applyWsEvent({ type: 'session-created', session: s1 });
-    expect(useAppStore.getState().sessions['s1']).toEqual(s1);
+  it('applyEvent agent-created', () => {
+    useAppStore.getState().applyEvent({ type: 'agent-created', agent: a1 });
+    expect(useAppStore.getState().agents['%0']).toEqual(a1);
   });
 
-  it('applyWsEvent session-ended removes session', () => {
-    useAppStore.setState({ sessions: { s1 } });
-    useAppStore.getState().applyWsEvent({ type: 'session-ended', sessionId: 's1' });
-    expect(useAppStore.getState().sessions['s1']).toBeUndefined();
+  it('applyEvent agent-gone marks status', () => {
+    useAppStore.setState({ agents: { '%0': a1 } });
+    useAppStore.getState().applyEvent({ type: 'agent-gone', agentId: '%0' });
+    expect(useAppStore.getState().agents['%0'].status).toBe('gone');
   });
 
-  it('applyWsEvent workspace-created adds workspace', () => {
-    useAppStore.getState().applyWsEvent({ type: 'workspace-created', workspace: w1 });
-    expect(useAppStore.getState().workspaces['w1']).toEqual(w1);
+  it('applyEvent message-created appends to topic stream', () => {
+    const m1: Message = { id: 1, topicId: 't1', fromAgentId: '%0', body: 'hi', imagePath: null, ts: 1, kind: 'text' };
+    const m2: Message = { id: 2, topicId: 't1', fromAgentId: '%0', body: 'hi2', imagePath: null, ts: 2, kind: 'text' };
+    useAppStore.getState().applyEvent({ type: 'message-created', message: m1 });
+    useAppStore.getState().applyEvent({ type: 'message-created', message: m2 });
+    expect(useAppStore.getState().messagesByTopic['t1']).toEqual([m1, m2]);
   });
 
-  it('applyWsEvent agent-updated updates agent', () => {
-    useAppStore.setState({ agents: { 's1:main': a1 } });
-    useAppStore.getState().applyWsEvent({
-      type: 'agent-updated',
-      agent: { ...a1, state: 'thinking' },
-    });
-    expect(useAppStore.getState().agents['s1:main'].state).toBe('thinking');
+  it('selectGroup also clears selectedTopic', () => {
+    useAppStore.setState({ selectedTopicId: 't1' });
+    useAppStore.getState().selectGroup('g2');
+    expect(useAppStore.getState().selectedTopicId).toBeNull();
+    expect(useAppStore.getState().selectedGroupId).toBe('g2');
   });
 });

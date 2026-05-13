@@ -1,18 +1,23 @@
 import { useEffect } from 'react';
 import { Sidebar } from './components/Sidebar.js';
+import { MainArea } from './components/MainArea.js';
 import { useAppStore } from './store/state.js';
-import { connectWs } from './api/client.js';
+import { fetchSnapshot, subscribeEvents } from './api/client.js';
 
 export function App() {
   const connected = useAppStore(s => s.connected);
   const applySnapshot = useAppStore(s => s.applySnapshot);
-  const applyWsEvent = useAppStore(s => s.applyWsEvent);
+  const applyEvent = useAppStore(s => s.applyEvent);
   const setConnected = useAppStore(s => s.setConnected);
 
   useEffect(() => {
-    const c = connectWs(applySnapshot, applyWsEvent, setConnected);
-    return () => c.close();
-  }, [applySnapshot, applyWsEvent, setConnected]);
+    let mounted = true;
+    fetchSnapshot()
+      .then(snap => { if (mounted) applySnapshot(snap); })
+      .catch(e => console.warn('snapshot failed', e));
+    const sub = subscribeEvents(applyEvent, setConnected);
+    return () => { mounted = false; sub.close(); };
+  }, [applySnapshot, applyEvent, setConnected]);
 
   return (
     <div className="app-shell">
@@ -23,11 +28,8 @@ export function App() {
         <div className={`status ${connected ? 'ok' : 'bad'}`}>
           {connected ? 'daemon connected' : 'daemon disconnected · 重连中...'}
         </div>
-        <div className="grid-placeholder">Agent 网格(M2 实装卡片渲染)</div>
+        <MainArea />
       </main>
-      <footer className="drawer">
-        <div className="drawer-placeholder">底部主控台(M4 实装派发)</div>
-      </footer>
     </div>
   );
 }

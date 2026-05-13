@@ -1,75 +1,85 @@
 import { useAppStore } from '../store/state.js';
-import type { Workspace, Session, Agent } from '@agent-bay/shared';
+import type { Agent, Group } from '@agent-bay/shared';
 
 export function Sidebar() {
-  const workspaces = useAppStore(s => s.workspaces);
-  const sessions = useAppStore(s => s.sessions);
   const agents = useAppStore(s => s.agents);
+  const groups = useAppStore(s => s.groups);
+  const selectedGroupId = useAppStore(s => s.selectedGroupId);
+  const selectAgent = useAppStore(s => s.selectAgent);
+  const selectGroup = useAppStore(s => s.selectGroup);
 
-  const wsList = Object.values(workspaces).sort((a, b) => a.createdAt - b.createdAt);
-
-  if (wsList.length === 0) {
-    return (
-      <>
-        <div className="sidebar-header">claude-teams</div>
-        <div className="sidebar-empty">没有发现 workspace。启动 daemon 后会自动扫描 ~/.claude/projects/。</div>
-      </>
-    );
-  }
+  const agentList = Object.values(agents).filter(a => a.status !== 'gone');
+  const groupList = Object.values(groups).sort((a, b) => a.createdAt - b.createdAt);
+  const ungroupedAgents = agentList.filter(a => !a.groupId);
 
   return (
     <>
-      <div className="sidebar-header">claude-teams · {wsList.length} workspaces</div>
-      <ul className="tree">
-        {wsList.map(ws => (
-          <WorkspaceNode
-            key={ws.id}
-            workspace={ws}
-            sessions={Object.values(sessions).filter(s => s.workspaceId === ws.id)}
-            agents={Object.values(agents)}
+      <div className="sidebar-header">
+        AgentBay <span className="sb-count">{agentList.length} agents · {groupList.length} groups</span>
+      </div>
+
+      <div className="sb-section">
+        <div className="sb-section-title">Groups</div>
+        {groupList.length === 0 && <div className="sb-empty">暂无 group · 在主区按 + 创建</div>}
+        {groupList.map(g => (
+          <GroupNode
+            key={g.id}
+            group={g}
+            agents={agentList.filter(a => a.groupId === g.id)}
+            selected={selectedGroupId === g.id}
+            onSelect={() => selectGroup(g.id)}
+            onSelectAgent={selectAgent}
           />
         ))}
-      </ul>
+      </div>
+
+      {ungroupedAgents.length > 0 && (
+        <div className="sb-section">
+          <div className="sb-section-title">未分配 Agents</div>
+          {ungroupedAgents.map(a => (
+            <AgentRow key={a.id} agent={a} onSelect={() => selectAgent(a.id)} />
+          ))}
+        </div>
+      )}
     </>
   );
 }
 
-function WorkspaceNode({ workspace, sessions, agents }: {
-  workspace: Workspace; sessions: Session[]; agents: Agent[];
+function GroupNode({ group, agents, selected, onSelect, onSelectAgent }: {
+  group: Group;
+  agents: Agent[];
+  selected: boolean;
+  onSelect: () => void;
+  onSelectAgent: (id: string) => void;
 }) {
   return (
-    <li className="tree-node tree-workspace">
-      <div className="tree-row">
-        <span>▾ {workspace.label}</span>
-        <span className="tree-count">{sessions.length}</span>
+    <div className={`sb-group ${selected ? 'sb-selected' : ''}`}>
+      <div className="sb-group-row" onClick={onSelect}>
+        <span className="sb-group-name">▾ {group.name}</span>
+        <span className="sb-count">{agents.length}</span>
       </div>
-      <ul className="tree-children">
-        {sessions.length === 0 && <li className="tree-empty">(无 session)</li>}
-        {sessions.map(s => (
-          <SessionNode key={s.id} session={s} agents={agents.filter(a => a.sessionId === s.id)} />
+      <div className="sb-group-agents">
+        {agents.length === 0 && <div className="sb-empty">(空)</div>}
+        {agents.map(a => (
+          <AgentRow key={a.id} agent={a} onSelect={() => onSelectAgent(a.id)} />
         ))}
-      </ul>
-    </li>
+      </div>
+    </div>
   );
 }
 
-function SessionNode({ session, agents }: { session: Session; agents: Agent[] }) {
-  const shortId = session.id.length > 8 ? session.id.slice(0, 8) : session.id;
+function AgentRow({ agent, onSelect }: { agent: Agent; onSelect: () => void }) {
   return (
-    <li className="tree-node tree-session">
-      <div className="tree-row">
-        <span title={session.id}>▸ {shortId}</span>
-        <span className={`badge badge-${session.mode}`}>{session.mode === 'owned' ? 'Owned' : 'Observed'}</span>
-      </div>
-      {agents.length > 0 && (
-        <ul className="tree-children">
-          {agents.map(a => (
-            <li key={a.id} className="tree-node tree-agent">
-              <span className={`agent-dot agent-dot-${a.state}`} /> {a.name}
-            </li>
-          ))}
-        </ul>
-      )}
-    </li>
+    <div className="sb-agent" onClick={onSelect} title={`${agent.tool} · ${agent.tmuxTarget}`}>
+      <span className={`agent-dot agent-dot-${agent.status}`} />
+      <span className="sb-agent-name">{agent.name}</span>
+      <span className="sb-agent-tool">{toolIcon(agent.tool)}</span>
+    </div>
   );
+}
+
+function toolIcon(tool: Agent['tool']): string {
+  if (tool === 'claude-code') return 'CC';
+  if (tool === 'codex') return 'Cx';
+  return '?';
 }

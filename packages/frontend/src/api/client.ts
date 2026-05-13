@@ -1,68 +1,107 @@
-import type { Workspace, Session, Agent, WsEvent } from '@agent-bay/shared';
+// API client + SSE 订阅(替代 v1 的 WebSocket)。
 
-export interface Snapshot {
-  workspaces: Workspace[];
-  sessions: Session[];
-  agents: Agent[];
-}
+import type { Snapshot, ServerEvent, Message } from '@agent-bay/shared';
 
 export async function fetchSnapshot(): Promise<Snapshot> {
   const r = await fetch('/api/snapshot');
   if (!r.ok) throw new Error(`snapshot ${r.status}`);
-  return await r.json();
+  return await r.json() as Snapshot;
 }
 
-export interface WsClient {
+export async function fetchMessages(topicId: string, limit = 100): Promise<Message[]> {
+  const r = await fetch(`/api/topics/${encodeURIComponent(topicId)}/messages?limit=${limit}`);
+  if (!r.ok) throw new Error(`messages ${r.status}`);
+  const d = await r.json() as { messages: Message[] };
+  return d.messages;
+}
+
+export async function createGroup(name: string, description?: string): Promise<void> {
+  const r = await fetch('/api/groups', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name, description }),
+  });
+  if (!r.ok) {
+    const d = await r.json() as { error?: string };
+    throw new Error(d.error ?? `groups ${r.status}`);
+  }
+}
+
+export async function addAgentToGroup(groupId: string, agentId: string): Promise<void> {
+  const r = await fetch(`/api/groups/${encodeURIComponent(groupId)}/agents`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ agent_id: agentId }),
+  });
+  if (!r.ok) throw new Error(`add ${r.status}`);
+}
+
+export async function renameAgent(agentId: string, name: string): Promise<void> {
+  const r = await fetch(`/api/agents/${encodeURIComponent(agentId)}/name`, {
+    method: 'PATCH',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  if (!r.ok) throw new Error(`rename ${r.status}`);
+}
+
+export async function createTopic(groupId: string, title: string): Promise<void> {
+  const r = await fetch('/api/topics', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ group_id: groupId, title }),
+  });
+  if (!r.ok) throw new Error(`topic ${r.status}`);
+}
+
+export async function sendKeystrokes(agentId: string, text: string, enter = false): Promise<void> {
+  const r = await fetch('/api/send', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ agent_id: agentId, text, enter }),
+  });
+  if (!r.ok) {
+    const d = await r.json() as { error?: string };
+    throw new Error(d.error ?? `send ${r.status}`);
+  }
+}
+
+export interface SseHandle {
   close: () => void;
 }
 
-/**
- * 连 WS,带指数退避重连;每次连上(含重连)先调 fetchSnapshot 同步全量,然后订阅增量。
- */
-export function connectWs(
-  onSnapshot: (s: Snapshot) => void,
-  onEvent: (e: WsEvent) => void,
-  onConnected: (connected: boolean) => void,
-): WsClient {
-  let ws: WebSocket | null = null;
-  let retryMs = 500;
+export function subscribeEvents(
+  onEvent: (e: ServerEvent) => void,
+  onConnect: (connected: boolean) => void,
+): SseHandle {
+  let es: EventSource | null = null;
   let closed = false;
+  let retryMs = 500;
 
-  async function connect(): Promise<void> {
+  function connect(): void {
     if (closed) return;
-    try {
-      const snap = await fetchSnapshot();
-      onSnapshot(snap);
-    } catch (e) {
-      console.warn('snapshot failed, will retry', e);
-      setTimeout(connect, retryMs);
-      retryMs = Math.min(retryMs * 2, 8000);
-      return;
-    }
-
-    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    ws = new WebSocket(`${proto}//${location.host}/ws`);
-    ws.onopen = () => {
+    es = new EventSource('/api/events');
+    es.onopen = () => {
       retryMs = 500;
-      onConnected(true);
+      onConnect(true);
     };
-    ws.onmessage = (m) => {
-      try { onEvent(JSON.parse(m.data)); } catch (e) { console.warn('bad ws msg', e); }
+    es.onmessage = (m) => {
+      try { onEvent(JSON.parse(m.data) as ServerEvent); }
+      catch (e) { console.warn('bad sse msg', e); }
     };
-    ws.onclose = () => {
-      onConnected(false);
+    es.onerror = () => {
+      onConnect(false);
+      es?.close();
       if (!closed) setTimeout(connect, retryMs);
       retryMs = Math.min(retryMs * 2, 8000);
     };
-    ws.onerror = () => { /* onclose 接管 */ };
   }
-
-  void connect();
+  connect();
 
   return {
     close() {
       closed = true;
-      ws?.close();
+      es?.close();
     },
   };
 }

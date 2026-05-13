@@ -1,16 +1,31 @@
+// Zustand store(v2 数据模型)。
+
 import { create } from 'zustand';
-import type { Workspace, Session, Agent, WsEvent } from '@agent-bay/shared';
+import type {
+  Agent, Group, Topic, Message, ServerEvent, Snapshot,
+} from '@agent-bay/shared';
 
 type Dict<T> = Record<string, T>;
 
 interface State {
-  workspaces: Dict<Workspace>;
-  sessions: Dict<Session>;
   agents: Dict<Agent>;
+  groups: Dict<Group>;
+  topics: Dict<Topic>;
+  // 消息按 topic id 索引,每个 topic 一份数组(按 ts 升序)
+  messagesByTopic: Dict<Message[]>;
+
   connected: boolean;
-  applySnapshot: (snap: { workspaces: Workspace[]; sessions: Session[]; agents: Agent[] }) => void;
-  applyWsEvent: (event: WsEvent) => void;
+  selectedAgentId: string | null;
+  selectedGroupId: string | null;
+  selectedTopicId: string | null;
+
+  applySnapshot: (snap: Snapshot) => void;
+  applyEvent: (event: ServerEvent) => void;
+  setMessages: (topicId: string, messages: Message[]) => void;
   setConnected: (connected: boolean) => void;
+  selectAgent: (id: string | null) => void;
+  selectGroup: (id: string | null) => void;
+  selectTopic: (id: string | null) => void;
 }
 
 function indexBy<T extends { id: string }>(items: T[]): Dict<T> {
@@ -20,42 +35,57 @@ function indexBy<T extends { id: string }>(items: T[]): Dict<T> {
 }
 
 export const useAppStore = create<State>((set) => ({
-  workspaces: {},
-  sessions: {},
   agents: {},
+  groups: {},
+  topics: {},
+  messagesByTopic: {},
   connected: false,
+  selectedAgentId: null,
+  selectedGroupId: null,
+  selectedTopicId: null,
+
   applySnapshot: (snap) => set({
-    workspaces: indexBy(snap.workspaces),
-    sessions: indexBy(snap.sessions),
     agents: indexBy(snap.agents),
+    groups: indexBy(snap.groups),
+    topics: indexBy(snap.topics),
   }),
-  applyWsEvent: (event) => set((state) => {
+
+  applyEvent: (event) => set((state) => {
     switch (event.type) {
-      case 'workspace-created':
-      case 'workspace-updated':
-        return { workspaces: { ...state.workspaces, [event.workspace.id]: event.workspace } };
-      case 'session-created':
-      case 'session-updated':
-        return { sessions: { ...state.sessions, [event.session.id]: event.session } };
-      case 'session-ended': {
-        const next = { ...state.sessions };
-        delete next[event.sessionId];
-        return { sessions: next };
-      }
       case 'agent-created':
       case 'agent-updated':
         return { agents: { ...state.agents, [event.agent.id]: event.agent } };
-      case 'message-event':
-        return {}; // M2 处理
-      case 'snapshot':
+      case 'agent-gone': {
+        const a = state.agents[event.agentId];
+        if (!a) return {};
+        return { agents: { ...state.agents, [event.agentId]: { ...a, status: 'gone' } } };
+      }
+      case 'group-created':
+      case 'group-updated':
+        return { groups: { ...state.groups, [event.group.id]: event.group } };
+      case 'topic-created':
+      case 'topic-updated':
+        return { topics: { ...state.topics, [event.topic.id]: event.topic } };
+      case 'message-created': {
+        const list = state.messagesByTopic[event.message.topicId] ?? [];
         return {
-          workspaces: indexBy(event.workspaces),
-          sessions: indexBy(event.sessions),
-          agents: indexBy(event.agents),
+          messagesByTopic: {
+            ...state.messagesByTopic,
+            [event.message.topicId]: [...list, event.message],
+          },
         };
+      }
       default:
         return {};
     }
   }),
+
+  setMessages: (topicId, messages) => set((state) => ({
+    messagesByTopic: { ...state.messagesByTopic, [topicId]: messages },
+  })),
+
   setConnected: (connected) => set({ connected }),
+  selectAgent: (id) => set({ selectedAgentId: id }),
+  selectGroup: (id) => set({ selectedGroupId: id, selectedTopicId: null }),
+  selectTopic: (id) => set({ selectedTopicId: id }),
 }));

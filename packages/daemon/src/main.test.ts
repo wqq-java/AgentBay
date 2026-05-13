@@ -4,49 +4,47 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { startDaemon } from './main.js';
 
-let tmpHome: string;
-let projectsDir: string;
+let tmpDir: string;
 let dbPath: string;
 let daemon: Awaited<ReturnType<typeof startDaemon>>;
 
 beforeEach(async () => {
   const stamp = `${Date.now()}-${Math.random()}`;
-  tmpHome = path.join(os.tmpdir(), `cth-${stamp}`);
-  projectsDir = path.join(tmpHome, '.claude', 'projects');
-  dbPath = path.join(tmpHome, '.claude-teams', 'state.db');
-  fs.mkdirSync(projectsDir, { recursive: true });
-
-  // 预放一个 jsonl 让 discovery 能找到
-  const wsDir = path.join(projectsDir, '-test-repo');
-  fs.mkdirSync(wsDir);
-  fs.writeFileSync(
-    path.join(wsDir, 'sess-fixture.jsonl'),
-    JSON.stringify({ type: 'user', sessionId: 'sess-fixture', cwd: '/test/repo' }) + '\n'
-  );
-
-  daemon = await startDaemon({ port: 0, dbPath, claudeProjectsDir: projectsDir });
+  tmpDir = path.join(os.tmpdir(), `cb-${stamp}`);
+  fs.mkdirSync(tmpDir, { recursive: true });
+  dbPath = path.join(tmpDir, 'state.db');
+  daemon = await startDaemon({ port: 0, dbPath, noScanner: true });
 });
 
 afterEach(async () => {
   await daemon.stop();
-  fs.rmSync(tmpHome, { recursive: true, force: true });
+  fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
 describe('daemon main', () => {
-  it('starts and runs discovery before accepting requests', async () => {
-    const r = await fetch(`http://127.0.0.1:${daemon.port}/api/snapshot`);
-    const snap = await r.json() as { sessions: { id: string }[] };
-    expect(snap.sessions.map((s: { id: string }) => s.id)).toContain('sess-fixture');
+  it('starts and serves /api/health', async () => {
+    const r = await fetch(`http://127.0.0.1:${daemon.port}/api/health`);
+    expect(r.status).toBe(200);
   });
 
-  it('handles SessionStart hook end-to-end', async () => {
-    const r = await fetch(`http://127.0.0.1:${daemon.port}/api/hook-event`, {
+  it('serves empty snapshot for fresh db', async () => {
+    const r = await fetch(`http://127.0.0.1:${daemon.port}/api/snapshot`);
+    const d = await r.json() as { agents: unknown[]; groups: unknown[]; topics: unknown[] };
+    expect(d.agents).toEqual([]);
+    expect(d.groups).toEqual([]);
+    expect(d.topics).toEqual([]);
+  });
+
+  it('persists data across restart', async () => {
+    await fetch(`http://127.0.0.1:${daemon.port}/api/groups`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ hook_event_name: 'SessionStart', session_id: 'live-sess', cwd: '/live/repo' }),
+      body: JSON.stringify({ name: 'persistent' }),
     });
-    expect(r.status).toBe(200);
-    const snap = await (await fetch(`http://127.0.0.1:${daemon.port}/api/snapshot`)).json() as { sessions: { id: string }[] };
-    expect(snap.sessions.map((s: { id: string }) => s.id)).toContain('live-sess');
+    await daemon.stop();
+    daemon = await startDaemon({ port: 0, dbPath, noScanner: true });
+    const r = await fetch(`http://127.0.0.1:${daemon.port}/api/snapshot`);
+    const d = await r.json() as { groups: { name: string }[] };
+    expect(d.groups.map(g => g.name)).toContain('persistent');
   });
 });
