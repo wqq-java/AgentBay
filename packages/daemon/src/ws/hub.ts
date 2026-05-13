@@ -1,5 +1,5 @@
 import type { WebSocketServer, WebSocket } from 'ws';
-import type { WsEvent } from '@claude-teams/shared';
+import type { WsEvent } from '@agent-bay/shared';
 
 export interface Hub {
   broadcast: (event: WsEvent) => void;

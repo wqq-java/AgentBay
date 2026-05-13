@@ -1,7 +1,7 @@
 import type Database from 'better-sqlite3';
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
-import type { Workspace } from '@claude-teams/shared';
+import type { Workspace } from '@agent-bay/shared';
 
 interface Row {
   id: string;

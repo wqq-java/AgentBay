@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { WebSocketServer, WebSocket } from 'ws';
 import { createHub } from './hub.js';
-import type { WsEvent } from '@claude-teams/shared';
+import type { WsEvent } from '@agent-bay/shared';
 
 let wss: WebSocketServer;
 let port: number;

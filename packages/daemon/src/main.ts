@@ -4,7 +4,7 @@ import { discoverObservedSessions } from './discovery/scan.js';
 import { startHttpServer } from './http/server.js';
 import { createHub } from './ws/hub.js';
 import { getClaudeProjectsDir } from './config/paths.js';
-import type { WsEvent } from '@claude-teams/shared';
+import type { WsEvent } from '@agent-bay/shared';
 
 export interface DaemonOpts {
   port: number;

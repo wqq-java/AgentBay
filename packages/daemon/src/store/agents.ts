@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import type { Agent, AgentState } from '@claude-teams/shared';
+import type { Agent, AgentState } from '@agent-bay/shared';
 
 interface Row {
   id: string;

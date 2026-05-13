@@ -1,5 +1,5 @@
 {
-  "name": "@claude-teams/daemon",
+  "name": "@agent-bay/daemon",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -14,7 +14,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@claude-teams/shared": "workspace:*",
+    "@agent-bay/shared": "workspace:*",
     "better-sqlite3": "^11.3.0",
     "chokidar": "^4.0.0",
     "express": "^4.21.0",

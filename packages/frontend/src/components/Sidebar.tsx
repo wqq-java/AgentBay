@@ -1,5 +1,5 @@
 import { useAppStore } from '../store/state.js';
-import type { Workspace, Session, Agent } from '@claude-teams/shared';
+import type { Workspace, Session, Agent } from '@agent-bay/shared';
 
 export function Sidebar() {
   const workspaces = useAppStore(s => s.workspaces);

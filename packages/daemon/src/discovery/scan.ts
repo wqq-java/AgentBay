@@ -4,7 +4,7 @@ import type Database from 'better-sqlite3';
 import { createOrGetWorkspaceByCwd } from '../store/workspaces.js';
 import { upsertSession, getSession } from '../store/sessions.js';
 import { decodeProjectDirNameAsCwd } from '../config/paths.js';
-import type { Session } from '@claude-teams/shared';
+import type { Session } from '@agent-bay/shared';
 
 /**
  * 扫 projectsDir 下所有 <encoded-cwd>/<sessionId>.jsonl,反向构建出 Observed sessions。

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { useAppStore } from './state.js';
-import type { Workspace, Session, Agent } from '@claude-teams/shared';
+import type { Workspace, Session, Agent } from '@agent-bay/shared';
 
 const w1: Workspace = { id: 'w1', cwd: '/foo', label: 'foo', createdAt: 1 };
 const s1: Session = {

@@ -1,5 +1,5 @@
 {
-  "name": "@claude-teams/shared",
+  "name": "@agent-bay/shared",
   "version": "0.0.1",
   "private": true,
   "type": "module",

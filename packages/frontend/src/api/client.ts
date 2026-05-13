@@ -1,4 +1,4 @@
-import type { Workspace, Session, Agent, WsEvent } from '@claude-teams/shared';
+import type { Workspace, Session, Agent, WsEvent } from '@agent-bay/shared';
 
 export interface Snapshot {
   workspaces: Workspace[];

@@ -12,7 +12,7 @@ import {
   updateAgentState,
   updateAgentTokens,
 } from './agents.js';
-import type { Agent, Session } from '@claude-teams/shared';
+import type { Agent, Session } from '@agent-bay/shared';
 
 let dbPath: string;
 let db: ReturnType<typeof openDb>;

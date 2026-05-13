@@ -1,5 +1,5 @@
 {
-  "name": "@claude-teams/frontend",
+  "name": "@agent-bay/frontend",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@claude-teams/shared": "workspace:*",
+    "@agent-bay/shared": "workspace:*",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "zustand": "^5.0.0"

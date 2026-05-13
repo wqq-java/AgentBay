@@ -35,7 +35,7 @@ afterEach(async () => {
 describe('daemon main', () => {
   it('starts and runs discovery before accepting requests', async () => {
     const r = await fetch(`http://127.0.0.1:${daemon.port}/api/snapshot`);
-    const snap = await r.json();
+    const snap = await r.json() as { sessions: { id: string }[] };
     expect(snap.sessions.map((s: { id: string }) => s.id)).toContain('sess-fixture');
   });
 
@@ -46,7 +46,7 @@ describe('daemon main', () => {
       body: JSON.stringify({ hook_event_name: 'SessionStart', session_id: 'live-sess', cwd: '/live/repo' }),
     });
     expect(r.status).toBe(200);
-    const snap = await (await fetch(`http://127.0.0.1:${daemon.port}/api/snapshot`)).json();
+    const snap = await (await fetch(`http://127.0.0.1:${daemon.port}/api/snapshot`)).json() as { sessions: { id: string }[] };
     expect(snap.sessions.map((s: { id: string }) => s.id)).toContain('live-sess');
   });
 });

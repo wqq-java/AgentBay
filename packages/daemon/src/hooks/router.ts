@@ -3,7 +3,7 @@ import type Database from 'better-sqlite3';
 import { createOrGetWorkspaceByCwd } from '../store/workspaces.js';
 import { upsertSession, getSession } from '../store/sessions.js';
 import { getClaudeProjectsDir, encodeCwdAsProjectDirName } from '../config/paths.js';
-import type { Session, WsEvent } from '@claude-teams/shared';
+import type { Session, WsEvent } from '@agent-bay/shared';
 import type { HookEvent } from './schemas.js';
 
 type BroadcastFn = (event: WsEvent) => void;

@@ -17,7 +17,7 @@ importers:
 
   packages/daemon:
     dependencies:
-      '@claude-teams/shared':
+      '@agent-bay/shared':
         specifier: workspace:*
         version: link:../shared
       better-sqlite3:
@@ -60,7 +60,7 @@ importers:
 
   packages/frontend:
     dependencies:
-      '@claude-teams/shared':
+      '@agent-bay/shared':
         specifier: workspace:*
         version: link:../shared
       react:

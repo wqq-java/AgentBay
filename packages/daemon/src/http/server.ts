@@ -7,7 +7,7 @@ import { listSessions } from '../store/sessions.js';
 import { listAllAgents } from '../store/agents.js';
 import { hookEventSchema } from '../hooks/schemas.js';
 import { handleHookEvent } from '../hooks/router.js';
-import type { WsEvent } from '@claude-teams/shared';
+import type { WsEvent } from '@agent-bay/shared';
 
 export interface StartOpts {
   db: Database.Database;

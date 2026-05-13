@@ -36,7 +36,7 @@ describe('http server', () => {
   it('GET /api/snapshot returns empty arrays for fresh db', async () => {
     const r = await fetch(`${url}/api/snapshot`);
     expect(r.status).toBe(200);
-    const data = await r.json();
+    const data = await r.json() as { workspaces: unknown[]; sessions: unknown[]; agents: { id: string }[] };
     expect(data).toEqual({ workspaces: [], sessions: [], agents: [] });
   });
 
@@ -47,7 +47,7 @@ describe('http server', () => {
       jsonlPath: '/tmp/x.jsonl', jsonlOffset: 0, startedAt: 1000, endedAt: null,
     });
     const r = await fetch(`${url}/api/snapshot`);
-    const data = await r.json();
+    const data = await r.json() as { workspaces: { cwd: string }[]; sessions: unknown[]; agents: unknown[] };
     expect(data.workspaces).toHaveLength(1);
     expect(data.sessions).toHaveLength(1);
     expect(data.workspaces[0].cwd).toBe('/foo');
@@ -69,7 +69,7 @@ describe('http server', () => {
       }),
     });
     expect(r.status).toBe(200);
-    const snap = await (await fetch(`${url}/api/snapshot`)).json();
+    const snap = await (await fetch(`${url}/api/snapshot`)).json() as { sessions: { id: string }[] };
     expect(snap.sessions.map((s: { id: string }) => s.id)).toContain('http-sess');
   });
 

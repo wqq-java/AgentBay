@@ -1,5 +1,5 @@
 import type Database from 'better-sqlite3';
-import type { Session, SessionMode, SessionState } from '@claude-teams/shared';
+import type { Session, SessionMode, SessionState } from '@agent-bay/shared';
 
 interface Row {
   id: string;

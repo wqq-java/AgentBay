@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { Sidebar } from './Sidebar.js';
 import { useAppStore } from '../store/state.js';
-import type { Workspace, Session, Agent } from '@claude-teams/shared';
+import type { Workspace, Session, Agent } from '@agent-bay/shared';
 
 describe('Sidebar', () => {
   beforeEach(() => {

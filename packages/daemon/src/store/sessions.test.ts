@@ -12,7 +12,7 @@ import {
   updateSessionState,
   updateSessionJsonlOffset,
 } from './sessions.js';
-import type { Session } from '@claude-teams/shared';
+import type { Session } from '@agent-bay/shared';
 
 let dbPath: string;
 let db: ReturnType<typeof openDb>;

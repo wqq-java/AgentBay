@@ -1,6 +1,6 @@
-# claude-teams
+# AgentBay
 
-Visual command center for Claude Code agent teams. See [`wiki/项目/claude-teams/设计.md`](/Users/eoi/EOI/wiki/项目/claude-teams/设计.md) for design.
+Visual command center for Claude Code agent teams. See [`wiki/项目/AgentBay/设计.md`](/Users/eoi/EOI/wiki/项目/AgentBay/设计.md) for design.
 
 ## Dev
 

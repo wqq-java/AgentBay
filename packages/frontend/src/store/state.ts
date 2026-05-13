@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { Workspace, Session, Agent, WsEvent } from '@claude-teams/shared';
+import type { Workspace, Session, Agent, WsEvent } from '@agent-bay/shared';
 
 type Dict<T> = Record<string, T>;
 
