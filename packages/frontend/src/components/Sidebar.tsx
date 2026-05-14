@@ -70,6 +70,12 @@ function WorkerProfilesNav() {
   return (
     <div className="sb-section sb-bottom">
       <div
+        className={`sb-nav-row ${view === 'master' ? 'sb-selected' : ''}`}
+        onClick={() => setView(view === 'master' ? 'main' : 'master')}
+      >
+        🎛 Master 控制台
+      </div>
+      <div
         className={`sb-nav-row ${view === 'workers' ? 'sb-selected' : ''}`}
         onClick={() => setView(view === 'workers' ? 'main' : 'workers')}
       >

@@ -18,7 +18,7 @@ interface State {
   selectedAgentId: string | null;
   selectedGroupId: string | null;
   selectedTopicId: string | null;
-  view: 'main' | 'workers';
+  view: 'main' | 'workers' | 'master';
 
   applySnapshot: (snap: Snapshot) => void;
   applyEvent: (event: ServerEvent) => void;
@@ -27,7 +27,7 @@ interface State {
   selectAgent: (id: string | null) => void;
   selectGroup: (id: string | null) => void;
   selectTopic: (id: string | null) => void;
-  setView: (view: 'main' | 'workers') => void;
+  setView: (view: 'main' | 'workers' | 'master') => void;
 }
 
 function indexBy<T extends { id: string }>(items: T[]): Dict<T> {

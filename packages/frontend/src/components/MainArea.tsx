@@ -7,12 +7,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../store/state.js';
 import {
-  createTopic, sendKeystrokes, addAgentToGroup, createGroup,
+  createTopic, sendKeystrokes, sendKeyApi, addAgentToGroup, createGroup,
   renameAgent as apiRenameAgent, fetchMessages,
   spawnAgent, killAgent,
   listWorkerProfiles, createWorkerProfile, deleteWorkerProfile,
   fetchConfig,
-  type AppConfig,
+  fetchMasterToken, fetchEscalations, testEscalate, resolveEscalationApi,
+  type AppConfig, type Escalation,
 } from '../api/client.js';
 import type { Agent, Topic, Message, WorkerProfile } from '@agent-bay/shared';
 
@@ -23,6 +24,7 @@ export function MainArea() {
   const view = useAppStore(s => s.view);
 
   if (view === 'workers') return <WorkerProfilesView />;
+  if (view === 'master') return <MasterView />;
   if (selectedTopicId) return <TopicView topicId={selectedTopicId} />;
   if (selectedGroupId) return <GroupView groupId={selectedGroupId} />;
   if (selectedAgentId) return <AgentView agentId={selectedAgentId} />;
@@ -52,14 +54,8 @@ const KEY_BUTTONS: Array<{ label: string; key: string }> = [
 ];
 
 async function sendRawKey(agentId: string, key: string) {
-  // /api/send 只送字符,key 通过把 text='' enter=true 模拟 Enter;其他键暂用文本拼
-  // 实际想要专门的"按键 endpoint"在 M3.5 加;此处仅 Enter 通过 enter:true 走
-  if (key === 'Enter') {
-    await sendKeystrokes(agentId, '', true);
-    return;
-  }
-  // 其他键 daemon 暂不支持;先 alert 提示用户(M3.5 后端会加 /api/send-key)
-  throw new Error(`按键 "${key}" 暂未在后端支持(M3.5 加,目前只支持 Enter)`);
+  // M3.5:走 /api/send-key,后端 sendRawKey 走白名单
+  await sendKeyApi(agentId, key);
 }
 
 // ──────────────────────────────────────────────────────
@@ -218,8 +214,8 @@ function AgentView({ agentId }: { agentId: string }) {
               key={k.key}
               className="btn small"
               onClick={() => pressKey(k.key)}
-              disabled={agent.status === 'gone' || k.key !== 'Enter'}
-              title={k.key === 'Enter' ? '送回车' : 'M3.5 加'}
+              disabled={agent.status === 'gone'}
+              title={`tmux send-keys ${k.key}`}
             >{k.label}</button>
           ))}
         </div>
@@ -231,8 +227,8 @@ function AgentView({ agentId }: { agentId: string }) {
               key={t.label}
               className="btn small"
               onClick={() => applyTemplate(t)}
-              disabled={agent.status === 'gone' || (!!t.sendKey && t.sendKey !== 'Enter')}
-              title={t.sendKey ? `按键 ${t.sendKey}(M3.5 加)` : `输入 ${t.text} + 回车`}
+              disabled={agent.status === 'gone'}
+              title={t.sendKey ? `按键 ${t.sendKey}` : `输入 ${t.text} + 回车`}
             >{t.label}</button>
           ))}
         </div>
@@ -329,6 +325,121 @@ function WorkerProfilesView() {
       ))}
 
       {creating && <NewProfileForm onCancel={() => setCreating(false)} onCreated={() => { setCreating(false); reloadProfiles(); }} />}
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────
+// M4:Master 视图(token / escalations / 测试推送)
+
+function MasterView() {
+  const setView = useAppStore(s => s.setView);
+  const [token, setToken] = useState<string | null>(null);
+  const [escalations, setEscalations] = useState<Escalation[]>([]);
+  const [tokenVisible, setTokenVisible] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [showTestForm, setShowTestForm] = useState(false);
+
+  async function reload() {
+    try {
+      setToken(await fetchMasterToken());
+      setEscalations(await fetchEscalations());
+    } catch (e) { setErr((e as Error).message); }
+  }
+
+  useEffect(() => { reload(); }, []);
+
+  async function copyToken() {
+    if (!token) return;
+    try { await navigator.clipboard.writeText(token); }
+    catch { /* no clipboard */ }
+  }
+
+  async function resolve(id: number) {
+    try { await resolveEscalationApi(id); await reload(); }
+    catch (e) { setErr((e as Error).message); }
+  }
+
+  return (
+    <div className="main-pad">
+      <div className="row" style={{ marginBottom: 12 }}>
+        <h2 style={{ flex: 1, margin: 0 }}>Master 控制台</h2>
+        <button className="btn ghost" onClick={() => setView('main')}>← 返回</button>
+        <button className="btn ghost" onClick={reload}>刷新</button>
+      </div>
+
+      <div className="card">
+        <h3>Master Token</h3>
+        <p className="muted small">Master Agent 在 ~/.agent-bay/master-token 文件里能直接读;前端这里只做展示用。</p>
+        <div className="row">
+          <code className="token-display">{tokenVisible ? token : '••••••••••••••••••••••••••••••••'}</code>
+          <button className="btn small" onClick={() => setTokenVisible(v => !v)}>
+            {tokenVisible ? '隐藏' : '显示'}
+          </button>
+          <button className="btn small" onClick={copyToken} disabled={!token}>复制</button>
+        </div>
+      </div>
+
+      <div className="card">
+        <h3 style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          升级通道(Escalations)
+          <button className="btn small primary" onClick={() => setShowTestForm(v => !v)}>
+            {showTestForm ? '取消' : '+ 测试推送'}
+          </button>
+        </h3>
+        {showTestForm && <TestEscalateForm onSent={() => { setShowTestForm(false); reload(); }} />}
+        {err && <div className="err">{err}</div>}
+        {escalations.length === 0 && <em className="muted">还没有 escalation</em>}
+        <div className="esc-list">
+          {escalations.map(e => (
+            <div key={e.id} className={`esc-row sev-${e.severity} ${e.resolved ? 'resolved' : ''}`}>
+              <span className={`sev-badge sev-${e.severity}`}>{e.severity}</span>
+              <span className="esc-msg">{e.message}</span>
+              <span className="esc-ts">{new Date(e.ts).toLocaleString()}</span>
+              {!e.resolved && (
+                <button className="btn small" onClick={() => resolve(e.id)}>resolve</button>
+              )}
+              {e.resolved && <span className="muted small">✓ resolved</span>}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="card">
+        <h3>ntfy 推送</h3>
+        <p className="muted small">
+          ntfy 配置在 <code>~/.agent-bay/config.json</code> 的 <code>ntfy.{`{enabled,topicUrl}`}</code>。
+          推荐自己取一个唯一的 topic 名,如 <code>https://ntfy.sh/agentbay-jacky-x7y2</code>(够长够私就行,topic 公开但难猜)。
+          手机装 ntfy app 订阅同一 topic。
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function TestEscalateForm({ onSent }: { onSent: () => void }) {
+  const [severity, setSeverity] = useState<'info' | 'warn' | 'blocker'>('info');
+  const [message, setMessage] = useState('test escalation from UI');
+  const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  async function send() {
+    setBusy(true); setErr(null);
+    try { await testEscalate(severity, message); onSent(); }
+    catch (e) { setErr((e as Error).message); }
+    finally { setBusy(false); }
+  }
+
+  return (
+    <div className="row" style={{ marginTop: 8, marginBottom: 12 }}>
+      <select className="input" value={severity} onChange={e => setSeverity(e.target.value as 'info' | 'warn' | 'blocker')} style={{ flex: '0 0 auto' }}>
+        <option value="info">info</option>
+        <option value="warn">warn</option>
+        <option value="blocker">blocker</option>
+      </select>
+      <input className="input" value={message} onChange={e => setMessage(e.target.value)} placeholder="message" />
+      <button className="btn primary" onClick={send} disabled={busy || !message}>发送</button>
+      {err && <div className="err" style={{ marginTop: 4, width: '100%' }}>{err}</div>}
     </div>
   );
 }

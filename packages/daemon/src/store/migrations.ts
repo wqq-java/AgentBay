@@ -93,6 +93,24 @@ const MIGRATIONS: Migration[] = [
       );
     `,
   },
+
+  {
+    version: 4,
+    sql: `
+      -- M4:升级通道(escalations) —— agent / master → human 的规范化通讯
+      CREATE TABLE escalations (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        ts INTEGER NOT NULL,
+        severity TEXT NOT NULL CHECK(severity IN ('info','warn','blocker')),
+        message TEXT NOT NULL,
+        from_agent_id TEXT REFERENCES agents(id) ON DELETE SET NULL,
+        resolved INTEGER NOT NULL DEFAULT 0,
+        resolved_at INTEGER
+      );
+      CREATE INDEX idx_escalations_ts ON escalations(ts DESC);
+      CREATE INDEX idx_escalations_open ON escalations(resolved, ts DESC);
+    `,
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

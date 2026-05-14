@@ -407,3 +407,42 @@ body {
 .btn.danger:hover { background: #991b1b; }
 .form-kv dt { padding-top: 8px; }
 .form-kv dd { padding: 4px 0; }
+
+/* M4 master view */
+.token-display {
+  background: rgba(99, 102, 241, 0.08);
+  color: #a5b4fc;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  flex: 1;
+  word-break: break-all;
+}
+.esc-list { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.esc-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: #0f172a;
+  border-radius: 5px;
+  font-size: 12px;
+}
+.esc-row.resolved { opacity: 0.5; }
+.esc-row.sev-blocker { border-left: 3px solid #ef4444; }
+.esc-row.sev-warn { border-left: 3px solid #f59e0b; }
+.esc-row.sev-info { border-left: 3px solid #3b82f6; }
+.sev-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 3px;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+.sev-badge.sev-blocker { background: #7f1d1d; color: #fecaca; }
+.sev-badge.sev-warn { background: #78350f; color: #fde68a; }
+.sev-badge.sev-info { background: #1e3a8a; color: #bfdbfe; }
+.esc-msg { flex: 1; color: #e2e8f0; }
+.esc-ts { font-size: 10px; color: #475569; flex-shrink: 0; }

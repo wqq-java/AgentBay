@@ -26,6 +26,11 @@ export const configSchema = z.object({
   }).default({}),
   /** 默认 tmux session 名(spawn 时如果没指定,新 window 开在哪) */
   defaultTmuxSession: z.string().default('agent-bay'),
+  /** ntfy 移动推送(M4 加) */
+  ntfy: z.object({
+    enabled: z.boolean().default(false),
+    topicUrl: z.string().optional(),  // 例:'https://ntfy.sh/your-private-topic-name'
+  }).default({}),
 }).default({});
 
 export type Config = z.infer<typeof configSchema>;

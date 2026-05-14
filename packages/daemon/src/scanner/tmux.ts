@@ -108,14 +108,37 @@ export function inferTool(pane: { command: string; title: string }): AgentTool {
  * - 文本会经过 tmux send-keys 的 literal 模式("-l"),不被解析成快捷键
  */
 export async function sendKeys(target: string, text: string, opts: { enter?: boolean } = {}): Promise<void> {
-  // tmux send-keys -t target -l "text"  会把字面文本作为输入
-  // 然后再发一个 'Enter' 触发(如果需要)
-  // 注意 shell escape:用单引号 + 处理内部单引号
   const escaped = text.replace(/'/g, `'"'"'`);
-  await pexec(`tmux send-keys -t '${target}' -l '${escaped}'`);
+  if (text.length > 0) {
+    await pexec(`tmux send-keys -t '${target}' -l '${escaped}'`);
+  }
   if (opts.enter) {
     await pexec(`tmux send-keys -t '${target}' Enter`);
   }
+}
+
+/**
+ * 送一个具名按键(Enter / Escape / C-c / C-d / Tab / Up / Down / 等)。
+ * 不带 -l,所以 tmux 把它当 key name 解析。
+ *
+ * 安全 list:只允许已知的按键名;防止用户从 UI 输入任意字符串导致命令注入。
+ */
+const ALLOWED_KEYS = new Set([
+  'Enter', 'Escape', 'Tab', 'BSpace', 'BTab', 'Space',
+  'Up', 'Down', 'Left', 'Right', 'PgUp', 'PgDn', 'Home', 'End',
+  'C-a', 'C-b', 'C-c', 'C-d', 'C-e', 'C-f', 'C-g', 'C-h', 'C-i', 'C-j',
+  'C-k', 'C-l', 'C-m', 'C-n', 'C-o', 'C-p', 'C-q', 'C-r', 'C-s', 'C-t',
+  'C-u', 'C-v', 'C-w', 'C-x', 'C-y', 'C-z',
+  'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'F11', 'F12',
+]);
+
+export async function sendRawKey(target: string, key: string): Promise<void> {
+  if (!ALLOWED_KEYS.has(key)) {
+    throw new Error(`key "${key}" not allowed (must be one of: ${[...ALLOWED_KEYS].slice(0, 10).join(', ')}, ...)`);
+  }
+  // key 已经在白名单里,不会含 shell 特殊字符;但 target 来自 db 里的 paneId
+  // (例如 %5),正常不会含特殊字符。仍然加引号以防万一
+  await pexec(`tmux send-keys -t '${target}' ${key}`);
 }
 
 /**

@@ -66,6 +66,18 @@ export async function sendKeystrokes(agentId: string, text: string, enter = fals
   }
 }
 
+export async function sendKeyApi(agentId: string, key: string): Promise<void> {
+  const r = await fetch('/api/send-key', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ agent_id: agentId, key }),
+  });
+  if (!r.ok) {
+    const d = await r.json() as { error?: string };
+    throw new Error(d.error ?? `send-key ${r.status}`);
+  }
+}
+
 // ── M3:调度 + worker profile ─────────────────────────
 
 export interface SpawnArgs {
@@ -137,6 +149,56 @@ export async function fetchConfig(): Promise<AppConfig> {
   if (!r.ok) throw new Error(`config ${r.status}`);
   const d = await r.json() as { config: AppConfig };
   return d.config;
+}
+
+// ── M4:Master 视图(只读,不需要 token)───────────
+
+export interface Escalation {
+  id: number;
+  ts: number;
+  severity: 'info' | 'warn' | 'blocker';
+  message: string;
+  fromAgentId: string | null;
+  resolved: boolean;
+  resolvedAt: number | null;
+}
+
+export async function fetchMasterToken(): Promise<string> {
+  const r = await fetch('/api/master-token');
+  if (!r.ok) throw new Error(`token ${r.status}`);
+  return (await r.json() as { token: string }).token;
+}
+
+export async function fetchEscalations(): Promise<Escalation[]> {
+  const r = await fetch('/api/escalations');
+  if (!r.ok) throw new Error(`escalations ${r.status}`);
+  return (await r.json() as { escalations: Escalation[] }).escalations;
+}
+
+export async function testEscalate(severity: 'info' | 'warn' | 'blocker', message: string): Promise<void> {
+  // 用 master token 调 master API(自取自用,本地测试)
+  const token = await fetchMasterToken();
+  const r = await fetch('/api/master/escalations', {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ severity, message }),
+  });
+  if (!r.ok) {
+    const d = await r.json() as { error?: string };
+    throw new Error(d.error ?? `escalate ${r.status}`);
+  }
+}
+
+export async function resolveEscalationApi(id: number): Promise<void> {
+  const token = await fetchMasterToken();
+  const r = await fetch(`/api/master/escalations/${id}/resolve`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}` },
+  });
+  if (!r.ok) throw new Error(`resolve ${r.status}`);
 }
 
 export interface SseHandle {
