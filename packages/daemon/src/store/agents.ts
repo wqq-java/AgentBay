@@ -98,16 +98,39 @@ export function markAgentGone(db: Database.Database, id: string): void {
   db.prepare(`UPDATE agents SET status = 'gone', last_seen_at = ? WHERE id = ?`).run(Date.now(), id);
 }
 
+/**
+ * 更新 agent 的 status + statusMeta。
+ *
+ * **重要:meta 是 MERGE 语义,不是 REPLACE。**
+ * 传入字段覆盖同名旧字段,其余旧字段保留。这样:
+ *   - spawn 时存的 cwd / sessionId 不会被状态机轮询覆写
+ *   - 状态机只更新它关心的 contextPct / usagePct / rateLimitHint 等
+ */
 export function updateAgentStatus(
   db: Database.Database,
   id: string,
   status: AgentStatus,
   statusMeta: Record<string, unknown> | null = null,
 ): void {
+  const row = db.prepare<[string], { status_meta: string | null }>(
+    `SELECT status_meta FROM agents WHERE id = ?`,
+  ).get(id);
+  const cur = row?.status_meta ? JSON.parse(row.status_meta) as Record<string, unknown> : {};
+  const merged: Record<string, unknown> = statusMeta ? { ...cur, ...statusMeta } : cur;
+  const metaStr = Object.keys(merged).length > 0 ? JSON.stringify(merged) : null;
   db.prepare(`UPDATE agents SET status = ?, status_meta = ?, last_seen_at = ? WHERE id = ?`).run(
-    status,
+    status, metaStr, Date.now(), id,
+  );
+}
+
+/** 强制覆写 statusMeta(测试 / 修数据用) */
+export function replaceAgentStatusMeta(
+  db: Database.Database,
+  id: string,
+  statusMeta: Record<string, unknown> | null,
+): void {
+  db.prepare(`UPDATE agents SET status_meta = ? WHERE id = ?`).run(
     statusMeta ? JSON.stringify(statusMeta) : null,
-    Date.now(),
     id,
   );
 }
