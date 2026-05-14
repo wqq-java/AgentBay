@@ -42,6 +42,7 @@ describe('spawnWorker', () => {
       command: 'claude', cwd: '/Users/eoi/EOI', name: 'worker-1',
       ensureSession, newWindow,
       waitTimeoutMs: 2000,
+      jsonlWaitTimeoutMs: 0,
     });
     expect(r.agent.id).toBe('%99');
     expect(r.agent.isSpawned).toBe(true);
@@ -73,6 +74,7 @@ describe('spawnWorker', () => {
       ensureSession: async () => {},
       newWindow: async () => ({ paneId: '%5', windowIndex: 0 }),
       waitTimeoutMs: 2000,
+      jsonlWaitTimeoutMs: 0,
     });
     expect(r.agent.groupId).toBe(g.id);
   });

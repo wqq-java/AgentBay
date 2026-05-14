@@ -2,7 +2,7 @@
 
 import { create } from 'zustand';
 import type {
-  Agent, Group, Topic, Message, ServerEvent, Snapshot,
+  Agent, Group, Topic, Message, ServerEvent, Snapshot, ChatMessage,
 } from '@agent-bay/shared';
 
 type Dict<T> = Record<string, T>;
@@ -13,21 +13,24 @@ interface State {
   topics: Dict<Topic>;
   // 消息按 topic id 索引,每个 topic 一份数组(按 ts 升序)
   messagesByTopic: Dict<Message[]>;
+  // 聊天消息按 agent id 索引(浏览器主用法)
+  chatByAgent: Dict<ChatMessage[]>;
 
   connected: boolean;
   selectedAgentId: string | null;
   selectedGroupId: string | null;
   selectedTopicId: string | null;
-  view: 'main' | 'workers' | 'master';
+  view: 'main' | 'workers' | 'master' | 'newteam';
 
   applySnapshot: (snap: Snapshot) => void;
   applyEvent: (event: ServerEvent) => void;
   setMessages: (topicId: string, messages: Message[]) => void;
+  setChatMessages: (agentId: string, messages: ChatMessage[]) => void;
   setConnected: (connected: boolean) => void;
   selectAgent: (id: string | null) => void;
   selectGroup: (id: string | null) => void;
   selectTopic: (id: string | null) => void;
-  setView: (view: 'main' | 'workers' | 'master') => void;
+  setView: (view: 'main' | 'workers' | 'master' | 'newteam') => void;
 }
 
 function indexBy<T extends { id: string }>(items: T[]): Dict<T> {
@@ -41,6 +44,7 @@ export const useAppStore = create<State>((set) => ({
   groups: {},
   topics: {},
   messagesByTopic: {},
+  chatByAgent: {},
   connected: false,
   selectedAgentId: null,
   selectedGroupId: null,
@@ -78,6 +82,17 @@ export const useAppStore = create<State>((set) => ({
           },
         };
       }
+      case 'chat-message': {
+        const list = state.chatByAgent[event.agentId] ?? [];
+        // dedupe by id
+        if (list.some(m => m.id === event.message.id)) return {};
+        return {
+          chatByAgent: {
+            ...state.chatByAgent,
+            [event.agentId]: [...list, event.message],
+          },
+        };
+      }
       default:
         return {};
     }
@@ -85,6 +100,10 @@ export const useAppStore = create<State>((set) => ({
 
   setMessages: (topicId, messages) => set((state) => ({
     messagesByTopic: { ...state.messagesByTopic, [topicId]: messages },
+  })),
+
+  setChatMessages: (agentId, messages) => set((state) => ({
+    chatByAgent: { ...state.chatByAgent, [agentId]: messages },
   })),
 
   setConnected: (connected) => set({ connected }),

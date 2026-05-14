@@ -5,6 +5,7 @@ import { openDb, closeDb } from './store/db.js';
 import { startHttpServer } from './http/server.js';
 import { createSseHub } from './http/sse.js';
 import { createScanner } from './scanner/scanner.js';
+import { startConversationWatchers } from './conversation/watcher.js';
 
 export interface DaemonOpts {
   port: number;
@@ -36,12 +37,16 @@ export async function startDaemon(opts: DaemonOpts): Promise<DaemonHandle> {
     stopScanner = scanner.start();
   }
 
+  // Conversation watchers:监 jsonl 变化 → SSE 推到聊天界面
+  const convWatchers = opts.noScanner ? null : startConversationWatchers(db, sse.broadcast);
+
   const addr = http.address() as AddressInfo;
 
   return {
     port: addr.port,
     async stop() {
       stopScanner?.();
+      convWatchers?.stop();
       await http.stop();
       closeDb(db);
     },

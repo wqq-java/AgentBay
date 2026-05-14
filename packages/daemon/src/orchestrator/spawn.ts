@@ -20,7 +20,10 @@ import type { Agent, ServerEvent } from '@agent-bay/shared';
 import type { Config } from '../config/config.js';
 import { checkSpawnAllowed } from '../config/config.js';
 import { ensureTmuxSession, newWindowWithCommand, killPane } from '../scanner/tmux.js';
-import { getAgent, markAgentSpawned, listOnlineAgents, updateAgentGroup } from '../store/agents.js';
+import {
+  getAgent, markAgentSpawned, listOnlineAgents, updateAgentGroup, updateAgentStatus,
+} from '../store/agents.js';
+import { waitForNewJsonl } from '../conversation/discovery.js';
 
 export interface SpawnOpts {
   command: string;
@@ -33,9 +36,12 @@ export interface SpawnOpts {
   role?: string | null;
   /** 等多久 scanner 看到新 pane,默认 8000ms */
   waitTimeoutMs?: number;
+  /** 等多久 CC jsonl 出现,默认 5000ms;0 表示不等(测试用) */
+  jsonlWaitTimeoutMs?: number;
   /** 实现注入(测试用) */
   ensureSession?: typeof ensureTmuxSession;
   newWindow?: typeof newWindowWithCommand;
+  jsonlWaitImpl?: typeof waitForNewJsonl;
 }
 
 export interface SpawnResult {
@@ -86,6 +92,18 @@ export async function spawnWorker(
   if (opts.groupId !== undefined && opts.groupId !== null) {
     updateAgentGroup(db, agent.id, opts.groupId);
   }
+
+  // 把 cwd 存到 statusMeta(供 conversation reader 找 jsonl)
+  // 顺手等一下新 jsonl 出现,把 sessionId 也存上
+  const jsonlTimeout = opts.jsonlWaitTimeoutMs ?? 5000;
+  const jsonlWaiter = opts.jsonlWaitImpl ?? waitForNewJsonl;
+  let newJsonl: { sessionId: string; jsonlPath: string } | null = null;
+  if (jsonlTimeout > 0) {
+    newJsonl = await jsonlWaiter(opts.cwd, start, jsonlTimeout).catch(() => null);
+  }
+  const meta: Record<string, unknown> = { ...(agent.statusMeta ?? {}), cwd: opts.cwd };
+  if (newJsonl) meta.sessionId = newJsonl.sessionId;
+  updateAgentStatus(db, agent.id, agent.status, meta);
 
   // 重新读一遍取最新
   const fresh = getAgent(db, agent.id);

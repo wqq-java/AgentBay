@@ -18,32 +18,33 @@ function mkGroup(id: string, name: string): Group {
 describe('Sidebar', () => {
   beforeEach(() => {
     useAppStore.setState({
-      agents: {}, groups: {}, topics: {}, messagesByTopic: {},
+      agents: {}, groups: {}, topics: {}, messagesByTopic: {}, chatByAgent: {},
       connected: false, selectedAgentId: null, selectedGroupId: null, selectedTopicId: null,
+      view: 'main',
     });
   });
 
-  it('renders empty state', () => {
+  it('renders empty state with new-team CTA', () => {
     const { container } = render(<Sidebar />);
     expect(container.textContent).toContain('AgentBay');
-    expect(container.textContent).toMatch(/暂无 group/);
+    expect(container.textContent).toMatch(/新建团队/);
+    expect(container.textContent).toMatch(/还没团队/);
   });
 
-  it('renders groups with agents', () => {
+  it('renders teams with agents + standalone agents section', () => {
     useAppStore.setState({
       agents: {
         '%0': mkAgent('%0', 'alice', { groupId: 'g1' }),
         '%1': mkAgent('%1', 'bob', { groupId: 'g1' }),
-        '%2': mkAgent('%2', 'charlie'), // ungrouped
+        '%2': mkAgent('%2', 'charlie'),
       },
       groups: { g1: mkGroup('g1', 'team-a') },
     });
     const { container } = render(<Sidebar />);
     expect(container.textContent).toContain('team-a');
     expect(container.textContent).toContain('alice');
-    expect(container.textContent).toContain('bob');
     expect(container.textContent).toContain('charlie');
-    expect(container.textContent).toContain('未分配');
+    expect(container.textContent).toContain('单聊会话');
   });
 
   it('excludes gone agents', () => {

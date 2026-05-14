@@ -7,14 +7,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../store/state.js';
 import {
-  createTopic, sendKeystrokes, sendKeyApi, addAgentToGroup, createGroup,
-  renameAgent as apiRenameAgent, fetchMessages,
-  spawnAgent, killAgent,
+  createTopic, fetchMessages,
+  spawnAgent,
   listWorkerProfiles, createWorkerProfile, deleteWorkerProfile,
   fetchConfig,
   fetchMasterToken, fetchEscalations, testEscalate, resolveEscalationApi,
   type AppConfig, type Escalation,
 } from '../api/client.js';
+import { ChatView } from './ChatView.js';
+import { NewTeamWizard } from './NewTeamWizard.js';
 import type { Agent, Topic, Message, WorkerProfile } from '@agent-bay/shared';
 
 export function MainArea() {
@@ -22,221 +23,46 @@ export function MainArea() {
   const selectedGroupId = useAppStore(s => s.selectedGroupId);
   const selectedTopicId = useAppStore(s => s.selectedTopicId);
   const view = useAppStore(s => s.view);
+  const selectAgent = useAppStore(s => s.selectAgent);
+  const setView = useAppStore(s => s.setView);
 
+  if (view === 'newteam') {
+    return <NewTeamWizard
+      onCreated={(_groupId, firstAgentId) => {
+        if (firstAgentId) selectAgent(firstAgentId);
+        setView('main');
+      }}
+      onCancel={() => setView('main')}
+    />;
+  }
   if (view === 'workers') return <WorkerProfilesView />;
   if (view === 'master') return <MasterView />;
+  // 主用法:选了 agent → ChatView(浏览器跟 Claude 聊)
+  if (selectedAgentId) return <ChatView agentId={selectedAgentId} />;
   if (selectedTopicId) return <TopicView topicId={selectedTopicId} />;
   if (selectedGroupId) return <GroupView groupId={selectedGroupId} />;
-  if (selectedAgentId) return <AgentView agentId={selectedAgentId} />;
   return <EmptyView />;
-}
-
-// ──────────────────────────────────────────────────────
-// 共用:模板 + 键位按钮
-
-const TEMPLATES = [
-  { label: '/clear', text: '/clear' },
-  { label: '/compact', text: '/compact' },
-  { label: '/help', text: '/help' },
-  { label: '继续', text: '继续' },
-  { label: 'Ctrl-C 一次', text: '', sendKey: 'C-c' },
-  { label: 'ESC', text: '', sendKey: 'Escape' },
-];
-
-const KEY_BUTTONS: Array<{ label: string; key: string }> = [
-  { label: 'Enter', key: 'Enter' },
-  { label: 'Esc', key: 'Escape' },
-  { label: 'Ctrl-C', key: 'C-c' },
-  { label: 'Ctrl-D', key: 'C-d' },
-  { label: 'Tab', key: 'Tab' },
-  { label: '↑', key: 'Up' },
-  { label: '↓', key: 'Down' },
-];
-
-async function sendRawKey(agentId: string, key: string) {
-  // M3.5:走 /api/send-key,后端 sendRawKey 走白名单
-  await sendKeyApi(agentId, key);
 }
 
 // ──────────────────────────────────────────────────────
 
 function EmptyView() {
-  const [name, setName] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  async function doCreate() {
-    if (!name.trim()) return;
-    setBusy(true); setErr(null);
-    try { await createGroup(name.trim()); setName(''); }
-    catch (e) { setErr((e as Error).message); }
-    finally { setBusy(false); }
-  }
-
+  const setView = useAppStore(s => s.setView);
   return (
     <div className="empty-view">
-      <h2>欢迎</h2>
-      <p>左侧选一个 group / agent / topic 开始,或先创建一个 group:</p>
-      <div className="row">
-        <input
-          className="input"
-          value={name}
-          onChange={e => setName(e.target.value)}
-          placeholder="group 名(如 team-aimeter)"
-          disabled={busy}
-        />
-        <button className="btn" onClick={doCreate} disabled={busy || !name.trim()}>新建 Group</button>
+      <h2>欢迎来到 AgentBay</h2>
+      <p>用浏览器跟 Claude(单独 / 一队)聊天 + 派活的工作站。</p>
+      <p className="muted">从这里开始:</p>
+      <div className="row" style={{ justifyContent: 'center', marginTop: 12 }}>
+        <button className="btn primary" onClick={() => setView('newteam')}>+ 新建团队</button>
       </div>
-      {err && <div className="err">{err}</div>}
+      <p className="muted small" style={{ marginTop: 24 }}>
+        左侧 sidebar 已有 agent 的话,点任何一个就能在浏览器里直接聊。
+      </p>
     </div>
   );
 }
 
-// ──────────────────────────────────────────────────────
-
-function AgentView({ agentId }: { agentId: string }) {
-  const agent = useAppStore(s => s.agents[agentId]);
-  const groups = useAppStore(s => s.groups);
-  const selectAgent = useAppStore(s => s.selectAgent);
-  const [text, setText] = useState('');
-  const [renaming, setRenaming] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [enter, setEnter] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-
-  if (!agent) return <div className="empty-view">Agent 不在或已下线</div>;
-
-  async function send() {
-    setErr(null);
-    try { await sendKeystrokes(agent.id, text, enter); setText(''); }
-    catch (e) { setErr((e as Error).message); }
-  }
-
-  async function applyTemplate(t: typeof TEMPLATES[number]) {
-    setErr(null);
-    try {
-      if (t.sendKey) {
-        await sendRawKey(agent.id, t.sendKey);
-      } else {
-        await sendKeystrokes(agent.id, t.text, true); // 模板默认带回车
-      }
-    } catch (e) { setErr((e as Error).message); }
-  }
-
-  async function pressKey(key: string) {
-    setErr(null);
-    try { await sendRawKey(agent.id, key); }
-    catch (e) { setErr((e as Error).message); }
-  }
-
-  async function rename() {
-    if (!newName.trim()) return;
-    try { await apiRenameAgent(agent.id, newName.trim()); setRenaming(false); }
-    catch (e) { setErr((e as Error).message); }
-  }
-
-  async function assignToGroup(gid: string) {
-    try { await addAgentToGroup(gid, agent.id); }
-    catch (e) { setErr((e as Error).message); }
-  }
-
-  async function doKill() {
-    if (!confirm(`确认杀掉 agent ${agent.name}?(只能杀 spawn 出来的)`)) return;
-    try {
-      await killAgent(agent.id);
-      selectAgent(null);
-    } catch (e) { setErr((e as Error).message); }
-  }
-
-  return (
-    <div className="main-pad">
-      <div className="card">
-        <div className="card-head">
-          <span className={`agent-dot agent-dot-${agent.status}`} />
-          {renaming ? (
-            <>
-              <input className="input inline" value={newName} onChange={e => setNewName(e.target.value)} />
-              <button className="btn small" onClick={rename}>保存</button>
-              <button className="btn small ghost" onClick={() => setRenaming(false)}>取消</button>
-            </>
-          ) : (
-            <>
-              <h2 className="card-title">{agent.name}</h2>
-              {agent.isSpawned && <span className="badge spawned">SPAWNED</span>}
-              <button className="btn small ghost" onClick={() => { setRenaming(true); setNewName(agent.name); }}>改名</button>
-              {agent.isSpawned && agent.status !== 'gone' && (
-                <button className="btn small danger" onClick={doKill}>杀掉</button>
-              )}
-            </>
-          )}
-        </div>
-        <dl className="kv">
-          <dt>tool</dt><dd>{agent.tool}</dd>
-          <dt>status</dt><dd>{agent.status}</dd>
-          <dt>tmux</dt><dd><code>{agent.tmuxTarget}</code> (pid {agent.pid ?? '?'})</dd>
-          <dt>group</dt><dd>
-            {agent.groupId ? (groups[agent.groupId]?.name ?? agent.groupId) : <em>未分配</em>}
-          </dd>
-        </dl>
-
-        {!agent.groupId && Object.values(groups).filter(g => !g.isDm).length > 0 && (
-          <div className="row wrap">
-            <span className="muted">加入 group:</span>
-            {Object.values(groups).filter(g => !g.isDm).map(g => (
-              <button key={g.id} className="btn small" onClick={() => assignToGroup(g.id)}>{g.name}</button>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div className="card">
-        <h3>发文本到 pane</h3>
-        <p className="muted small">默认不送回车——agent 看得到但不会立刻执行。勾上"含回车"会触发 submit。</p>
-        <textarea
-          className="textarea"
-          value={text}
-          onChange={e => setText(e.target.value)}
-          placeholder="发给 pane 的文本…"
-          rows={4}
-        />
-        <div className="row">
-          <label className="check">
-            <input type="checkbox" checked={enter} onChange={e => setEnter(e.target.checked)} />
-            含回车(送 Enter)
-          </label>
-          <button className="btn primary" onClick={send} disabled={!text || agent.status === 'gone'}>发送</button>
-        </div>
-
-        <div className="row wrap" style={{ marginTop: 12 }}>
-          <span className="muted">快捷键:</span>
-          {KEY_BUTTONS.map(k => (
-            <button
-              key={k.key}
-              className="btn small"
-              onClick={() => pressKey(k.key)}
-              disabled={agent.status === 'gone'}
-              title={`tmux send-keys ${k.key}`}
-            >{k.label}</button>
-          ))}
-        </div>
-
-        <div className="row wrap" style={{ marginTop: 8 }}>
-          <span className="muted">模板:</span>
-          {TEMPLATES.map(t => (
-            <button
-              key={t.label}
-              className="btn small"
-              onClick={() => applyTemplate(t)}
-              disabled={agent.status === 'gone'}
-              title={t.sendKey ? `按键 ${t.sendKey}` : `输入 ${t.text} + 回车`}
-            >{t.label}</button>
-          ))}
-        </div>
-        {err && <div className="err">{err}</div>}
-      </div>
-    </div>
-  );
-}
 
 // ──────────────────────────────────────────────────────
 // M3:Worker profile 管理 + Spawn 对话框

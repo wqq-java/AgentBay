@@ -1,6 +1,6 @@
 // API client + SSE 订阅(替代 v1 的 WebSocket)。
 
-import type { Snapshot, ServerEvent, Message, Agent, WorkerProfile } from '@agent-bay/shared';
+import type { Snapshot, ServerEvent, Message, Agent, WorkerProfile, ChatMessage } from '@agent-bay/shared';
 
 export async function fetchSnapshot(): Promise<Snapshot> {
   const r = await fetch('/api/snapshot');
@@ -190,6 +190,67 @@ export async function testEscalate(severity: 'info' | 'warn' | 'blocker', messag
     const d = await r.json() as { error?: string };
     throw new Error(d.error ?? `escalate ${r.status}`);
   }
+}
+
+// ── 重设计:Conversation(浏览器对话)───────────────
+
+export async function fetchChatMessages(agentId: string): Promise<ChatMessage[]> {
+  const r = await fetch(`/api/conversations/${encodeURIComponent(agentId)}/messages`);
+  if (!r.ok) throw new Error(`messages ${r.status}`);
+  const d = await r.json() as { messages: ChatMessage[]; jsonl_path: string | null };
+  return d.messages;
+}
+
+export async function sendChatMessage(agentId: string, text: string): Promise<void> {
+  const r = await fetch(`/api/conversations/${encodeURIComponent(agentId)}/send`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ text }),
+  });
+  if (!r.ok) {
+    const d = await r.json() as { error?: string };
+    throw new Error(d.error ?? `send ${r.status}`);
+  }
+}
+
+// ── 重设计:Teams ──────────────────────────────────
+
+export interface TeamMemberSpec { role: string; command?: string; kickoff?: string }
+export interface TeamTemplate {
+  id: string;
+  name: string;
+  description: string;
+  members: TeamMemberSpec[];
+}
+
+export async function fetchTeamTemplates(): Promise<TeamTemplate[]> {
+  const r = await fetch('/api/team-templates');
+  if (!r.ok) throw new Error(`templates ${r.status}`);
+  return (await r.json() as { templates: TeamTemplate[] }).templates;
+}
+
+export interface CreateTeamArgs {
+  name: string;
+  cwd: string;
+  template_id?: string;
+  members?: TeamMemberSpec[];
+}
+
+export async function createTeamApi(args: CreateTeamArgs): Promise<{
+  group: { id: string; name: string };
+  agents: Agent[];
+  errors: Array<{ role: string; error: string }>;
+}> {
+  const r = await fetch('/api/teams', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(args),
+  });
+  if (!r.ok) {
+    const d = await r.json() as { error?: string };
+    throw new Error(d.error ?? `team ${r.status}`);
+  }
+  return await r.json() as { group: { id: string; name: string }; agents: Agent[]; errors: Array<{ role: string; error: string }> };
 }
 
 export async function resolveEscalationApi(id: number): Promise<void> {

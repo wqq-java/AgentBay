@@ -29,6 +29,9 @@ import { buildMasterRouter } from '../master/api.js';
 import { ensureMasterToken } from '../master/auth.js';
 import { hookEventSchema } from '../hooks/schemas.js';
 import { handleHookEvent } from '../hooks/router.js';
+import { findAgentJsonl } from '../conversation/discovery.js';
+import { readConversation } from '../conversation/reader.js';
+import { createTeam, getTeamTemplates } from '../orchestrator/teams.js';
 import type { SseHub } from './sse.js';
 
 export interface StartOpts {
@@ -303,6 +306,56 @@ export async function startHttpServer(opts: StartOpts): Promise<ServerHandle> {
   // M4:UI 用的 master token 显示 endpoint(本地 only,无 auth 也 OK)
   app.get('/api/master-token', (_req, res) => {
     res.json({ token: masterToken });
+  });
+
+  // ── 重设计:Conversation(浏览器对话界面)───────────
+
+  app.get('/api/conversations/:agentId/messages', async (req, res) => {
+    const agent = getAgent(opts.db, req.params.agentId);
+    if (!agent) { res.status(404).json({ error: 'agent not found' }); return; }
+    const jsonlPath = await findAgentJsonl(agent);
+    if (!jsonlPath) { res.json({ messages: [], jsonl_path: null }); return; }
+    try {
+      const messages = await readConversation(jsonlPath);
+      res.json({ messages, jsonl_path: jsonlPath });
+    } catch (e) {
+      res.status(500).json({ error: (e as Error).message });
+    }
+  });
+
+  // 发用户消息到 agent 的 pane(text + Enter)
+  app.post('/api/conversations/:agentId/send', async (req, res) => {
+    const agent = getAgent(opts.db, req.params.agentId);
+    if (!agent) { res.status(404).json({ error: 'agent not found' }); return; }
+    if (agent.status === 'gone') { res.status(410).json({ error: 'agent is gone' }); return; }
+    const text = typeof req.body?.text === 'string' ? req.body.text : '';
+    if (!text.trim()) { res.status(400).json({ error: 'text required' }); return; }
+    try {
+      await sendKeys(agent.tmuxTarget, text, { enter: true });
+      res.json({ ok: true });
+    } catch (e) {
+      res.status(500).json({ error: (e as Error).message });
+    }
+  });
+
+  // ── 重设计:Teams(一键建团队)───────────────────
+
+  app.get('/api/team-templates', (_req, res) => {
+    res.json({ templates: getTeamTemplates() });
+  });
+
+  app.post('/api/teams', async (req, res) => {
+    try {
+      const result = await createTeam(opts.db, loadConfig(), {
+        name: req.body?.name,
+        cwd: req.body?.cwd,
+        templateId: req.body?.template_id,
+        members: req.body?.members,
+      }, opts.sse.broadcast);
+      res.json(result);
+    } catch (e) {
+      res.status(400).json({ error: (e as Error).message });
+    }
   });
 
   // ── M6:CC hooks endpoint(任何 CC 实例都可推送)─────
