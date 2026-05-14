@@ -34,30 +34,39 @@ export function getAgentSessionId(agent: Agent): string | null {
 /**
  * 找 agent 当前 session 的 jsonl 路径。
  * 找不到返回 null。
+ *
+ * 关键:fallback 用 **birthtime**(文件创建时间)而不是 mtime —— mtime 会被
+ * "正在写"的老 jsonl 推后,导致 discovery 误把老 session 的 jsonl 当成新 agent
+ * 的。birthtime 只取 spawn 之后新建的 jsonl。
  */
 export async function findAgentJsonl(agent: Agent): Promise<string | null> {
   const cwd = getAgentCwd(agent);
   if (!cwd) return null;
   const projectDir = path.join(getClaudeProjectsDir(), encodeCwdAsProjectDirName(cwd));
 
+  // 1. 精确匹配 sessionId
   const sessionId = getAgentSessionId(agent);
   if (sessionId) {
     const exact = path.join(projectDir, `${sessionId}.jsonl`);
     try { await fs.access(exact); return exact; } catch { /* fall through */ }
   }
 
-  // 兜底:扫该 cwd 目录下所有 jsonl,选 mtime 最新
+  // 2. 兜底:只考虑 birthtime >= agent.createdAt - 5s 的 jsonl(spawn 之后新建的);
+  //    其中选最大 mtime(刚被写过 = 当前活跃)
   let entries: string[];
   try { entries = await fs.readdir(projectDir); } catch { return null; }
   const jsonls = entries.filter(e => e.endsWith('.jsonl'));
   if (jsonls.length === 0) return null;
 
+  const cutoffMs = agent.createdAt - 5000;
   let bestPath = '';
   let bestMtime = -1;
   for (const f of jsonls) {
     const p = path.join(projectDir, f);
     try {
       const st = await fs.stat(p);
+      const birthMs = st.birthtimeMs || st.ctimeMs;
+      if (birthMs < cutoffMs) continue;  // 老 session,跳过
       if (st.mtimeMs > bestMtime) {
         bestMtime = st.mtimeMs;
         bestPath = p;
@@ -68,8 +77,10 @@ export async function findAgentJsonl(agent: Agent): Promise<string | null> {
 }
 
 /**
- * spawn 后用:在 cwd 项目目录里等到出现一个新 jsonl(mtime > sinceMs),返回它的 sessionId。
- * 用于把 spawn 出的 pane 跟它的 jsonl 关联。
+ * spawn 后用:在 cwd 项目目录里等到出现一个新 jsonl(birthtime > sinceMs),
+ * 返回它的 sessionId。用于把 spawn 出的 pane 跟它的 jsonl 关联。
+ *
+ * birthtime 优于 mtime —— mtime 会被现有 jsonl 的写入推后,误判。
  */
 export async function waitForNewJsonl(
   cwd: string,
@@ -86,7 +97,8 @@ export async function waitForNewJsonl(
       const p = path.join(projectDir, f);
       try {
         const st = await fs.stat(p);
-        if (st.mtimeMs >= sinceMs) {
+        const birthMs = st.birthtimeMs || st.ctimeMs;
+        if (birthMs >= sinceMs) {
           return { sessionId: f.replace(/\.jsonl$/, ''), jsonlPath: p };
         }
       } catch { /* ignore */ }

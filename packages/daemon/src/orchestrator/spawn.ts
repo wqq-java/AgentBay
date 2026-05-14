@@ -101,8 +101,8 @@ export async function spawnWorker(
   }
 
   // 把 cwd 存到 statusMeta(供 conversation reader 找 jsonl)
-  // 顺手等一下新 jsonl 出现,把 sessionId 也存上
-  const jsonlTimeout = opts.jsonlWaitTimeoutMs ?? 5000;
+  // 顺手等一下新 jsonl 出现,把 sessionId 也存上(基于 birthtime,不会误判老 session)
+  const jsonlTimeout = opts.jsonlWaitTimeoutMs ?? 15000;  // CC 启动 + 写第一行 ~10s
   const jsonlWaiter = opts.jsonlWaitImpl ?? waitForNewJsonl;
   let newJsonl: { sessionId: string; jsonlPath: string } | null = null;
   if (jsonlTimeout > 0) {
