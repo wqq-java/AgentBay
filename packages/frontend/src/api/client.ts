@@ -112,6 +112,20 @@ export async function killAgent(agentId: string, force = false): Promise<void> {
   }
 }
 
+export async function deleteTeamApi(groupId: string, force = false): Promise<{
+  killed: string[];
+  failures: Array<{ agentId: string; error: string }>;
+}> {
+  const r = await fetch(`/api/groups/${encodeURIComponent(groupId)}${force ? '?force=1' : ''}`, {
+    method: 'DELETE',
+  });
+  if (!r.ok) {
+    const d = await r.json() as { error?: string };
+    throw new Error(d.error ?? `delete team ${r.status}`);
+  }
+  return await r.json() as { killed: string[]; failures: Array<{ agentId: string; error: string }>; group_deleted: string };
+}
+
 export async function listWorkerProfiles(): Promise<WorkerProfile[]> {
   const r = await fetch('/api/worker-profiles');
   if (!r.ok) throw new Error(`profiles ${r.status}`);

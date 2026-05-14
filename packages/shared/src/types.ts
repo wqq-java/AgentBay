@@ -100,4 +100,5 @@ export type ServerEvent =
   | { type: 'topic-created'; topic: Topic }
   | { type: 'topic-updated'; topic: Topic }
   | { type: 'message-created'; message: Message }
-  | { type: 'chat-message'; agentId: string; message: import('./chat.js').ChatMessage };
+  | { type: 'chat-message'; agentId: string; message: import('./chat.js').ChatMessage }
+  | { type: 'group-deleted'; groupId: string };

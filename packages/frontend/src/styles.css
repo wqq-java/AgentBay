@@ -653,6 +653,30 @@ body {
 .sb-team-name { flex: 1; }
 .sb-team-agents { padding-left: 14px; }
 
+/* close / delete 按钮(团队 / agent 行右侧)—— 默认半透明,hover 高亮 */
+.sb-x-btn {
+  background: transparent;
+  border: none;
+  color: #64748b;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 4px;
+  border-radius: 3px;
+  opacity: 0;
+  transition: opacity 0.1s, background 0.1s, color 0.1s;
+  flex-shrink: 0;
+}
+.sb-team-row:hover .sb-x-btn,
+.sb-agent:hover .sb-x-btn {
+  opacity: 1;
+}
+.sb-x-btn:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #fecaca;
+}
+.sb-x-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+
 /* Project picker */
 .picker { display: flex; flex-direction: column; gap: 8px; }
 .picker-root-row {

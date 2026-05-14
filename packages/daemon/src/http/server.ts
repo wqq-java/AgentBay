@@ -16,7 +16,7 @@ import http from 'node:http';
 import { z } from 'zod';
 import type Database from 'better-sqlite3';
 import { listAgents, getAgent, updateAgentGroup, renameAgent } from '../store/agents.js';
-import { listGroups, createGroup, getGroup } from '../store/groups.js';
+import { listGroups, createGroup, getGroup, deleteGroup } from '../store/groups.js';
 import { listAllTopics, createTopic, getTopic, resolveTopic } from '../store/topics.js';
 import { listMessagesByTopic } from '../store/messages.js';
 import {
@@ -258,6 +258,33 @@ export async function startHttpServer(opts: StartOpts): Promise<ServerHandle> {
     } catch (e) {
       res.status(400).json({ error: (e as Error).message });
     }
+  });
+
+  // 删团队:把所有 spawned online agent 都杀掉,然后删 group
+  app.delete('/api/groups/:id', async (req, res) => {
+    const group = getGroup(opts.db, req.params.id);
+    if (!group) { res.status(404).json({ error: 'group not found' }); return; }
+
+    const force = req.query.force === '1' || req.query.force === 'true';
+    const inGroup = listAgents(opts.db).filter(a => a.groupId === group.id && a.status !== 'gone');
+    const killed: string[] = [];
+    const failures: Array<{ agentId: string; error: string }> = [];
+    for (const a of inGroup) {
+      if (!a.isSpawned && !force) {
+        // 非 AgentBay spawn 的不杀,只把它从 group 里移出
+        updateAgentGroup(opts.db, a.id, null);
+        continue;
+      }
+      try {
+        await killWorker(opts.db, { agentId: a.id, force });
+        killed.push(a.id);
+      } catch (e) {
+        failures.push({ agentId: a.id, error: (e as Error).message });
+      }
+    }
+    deleteGroup(opts.db, group.id);
+    opts.sse.broadcast({ type: 'group-deleted', groupId: group.id });
+    res.json({ killed, failures, group_deleted: group.id });
   });
 
   // ── M3:worker profiles ────────────────────────────

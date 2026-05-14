@@ -1,6 +1,8 @@
 // 重做 Sidebar:Teams 在最上面,然后是单 agent 会话,设置类(Workers/Master)收纳到底部。
 
+import { useState } from 'react';
 import { useAppStore } from '../store/state.js';
+import { killAgent, deleteTeamApi } from '../api/client.js';
 import type { Agent, Group } from '@agent-bay/shared';
 
 export function Sidebar() {
@@ -13,7 +15,8 @@ export function Sidebar() {
 
   const onlineAgents = Object.values(agents).filter(a => a.status !== 'gone');
   const allGroups = Object.values(groups).sort((a, b) => a.createdAt - b.createdAt);
-  const teamGroups = allGroups.filter(g => !g.isDm);
+  // 只显示有 online agent 的非 DM 团队;空团队隐藏(用户用"删除"按钮可主动清)
+  const teamGroups = allGroups.filter(g => !g.isDm && onlineAgents.some(a => a.groupId === g.id));
   const standaloneAgents = onlineAgents.filter(a => !a.groupId);
 
   function newTeam() {
@@ -84,14 +87,42 @@ function TeamNode({ group, agents, selectedAgentId, currentView, onSelectAgent }
   currentView: string;
   onSelectAgent: (id: string) => void;
 }) {
+  const selectAgent = useAppStore(s => s.selectAgent);
+  const [busy, setBusy] = useState(false);
+
+  async function deleteTeam(e: React.MouseEvent) {
+    e.stopPropagation();
+    const spawnedCount = agents.filter(a => a.isSpawned).length;
+    const msg = spawnedCount > 0
+      ? `删团队 "${group.name}"?会杀掉 ${spawnedCount} 个 spawn 出来的 CC 进程。`
+      : `删团队 "${group.name}"?(只会移除 group,不会杀手起的 agent)`;
+    if (!confirm(msg)) return;
+    setBusy(true);
+    try {
+      // 如果选中的 agent 在这团队里,先取消选中
+      if (selectedAgentId && agents.some(a => a.id === selectedAgentId)) {
+        selectAgent(null);
+      }
+      await deleteTeamApi(group.id);
+    } catch (err) {
+      alert(`删团队失败:${(err as Error).message}`);
+    } finally { setBusy(false); }
+  }
+
   return (
     <div className="sb-team">
       <div className="sb-team-row">
         <span className="sb-team-name">▾ {group.name}</span>
         <span className="sb-count">{agents.length}</span>
+        <button
+          className="sb-x-btn"
+          onClick={deleteTeam}
+          title="删除团队(杀所有 spawn 的 agent)"
+          disabled={busy}
+        >×</button>
       </div>
       <div className="sb-team-agents">
-        {agents.length === 0 && <div className="sb-empty">(空,所有 agent 已下线)</div>}
+        {agents.length === 0 && <div className="sb-empty">(空)</div>}
         {agents.map(a => (
           <AgentRow
             key={a.id}
@@ -110,13 +141,29 @@ function AgentRow({ agent, selected, onSelect }: {
   selected: boolean;
   onSelect: () => void;
 }) {
+  const selectAgent = useAppStore(s => s.selectAgent);
+  const selectedAgentId = useAppStore(s => s.selectedAgentId);
   const usagePct = agent.statusMeta?.usagePct as number | undefined;
   const role = agent.role;
+  const [busy, setBusy] = useState(false);
+
+  async function killThis(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!confirm(`关闭会话 "${agent.name}"?会杀掉对应 CC 进程(只能关 spawn 出来的)。`)) return;
+    setBusy(true);
+    try {
+      await killAgent(agent.id);
+      if (selectedAgentId === agent.id) selectAgent(null);
+    } catch (err) {
+      alert(`关闭失败:${(err as Error).message}`);
+    } finally { setBusy(false); }
+  }
+
   return (
     <div
       className={`sb-agent ${selected ? 'sb-selected' : ''}`}
       onClick={onSelect}
-      title={`${agent.tool} · ${agent.tmuxTarget} · ${agent.status}`}
+      title={`${agent.tool} · ${agent.tmuxTarget} · ${agent.status}${agent.isSpawned ? ' · spawned' : ' · 手起'}`}
     >
       <span className={`agent-dot agent-dot-${agent.status}`} />
       <span className="sb-agent-name">
@@ -126,6 +173,14 @@ function AgentRow({ agent, selected, onSelect }: {
         <span className="sb-agent-usage">{usagePct}%</span>
       )}
       <span className="sb-agent-tool">{toolIcon(agent.tool)}</span>
+      {agent.isSpawned && (
+        <button
+          className="sb-x-btn"
+          onClick={killThis}
+          title="关闭会话(杀 CC 进程)"
+          disabled={busy}
+        >×</button>
+      )}
     </div>
   );
 }

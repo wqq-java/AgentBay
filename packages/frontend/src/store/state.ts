@@ -70,6 +70,11 @@ export const useAppStore = create<State>((set) => ({
       case 'group-created':
       case 'group-updated':
         return { groups: { ...state.groups, [event.group.id]: event.group } };
+      case 'group-deleted': {
+        const next = { ...state.groups };
+        delete next[event.groupId];
+        return { groups: next };
+      }
       case 'topic-created':
       case 'topic-updated':
         return { topics: { ...state.topics, [event.topic.id]: event.topic } };
