@@ -62,8 +62,23 @@ export function ChatView({ agentId }: { agentId: string }) {
     }
   }
 
-  // 渲染消息列表(过滤掉 tool_result_synthetic,因为已嵌入 assistant)
-  const visible = messages.filter(m => m.role !== 'tool_result_synthetic');
+  // 渲染消息列表:
+  //  - 过滤 tool_result_synthetic(已嵌入 assistant)
+  //  - 过滤空系统消息(hook 事件之类,无人可读内容)
+  const visible = messages.filter(m => {
+    if (m.role === 'tool_result_synthetic') return false;
+    if (m.role === 'system') {
+      // 系统消息只在有 text 内容时才显示
+      const hasText = m.blocks.some(b => b.type === 'text' && b.text.trim().length > 0);
+      return hasText;
+    }
+    return true;
+  });
+
+  // CC 刚启动时(status='online' 还没被状态机识别成 idle/active),不能立刻发——
+  // 这时输入会被 CC 的 banner / 初始化吃掉
+  const isStartingUp = agent.status === 'online';
+  const canSend = !isStartingUp && agent.status !== 'gone' && !sending;
 
   return (
     <div className="chat-view">
@@ -88,22 +103,30 @@ export function ChatView({ agentId }: { agentId: string }) {
         <div ref={endRef} />
       </div>
 
+      {isStartingUp && (
+        <div className="chat-startup-banner">
+          ⏳ Claude 正在启动…(banner / 登录检查中,完成后这里会变成 idle 才能发消息)
+        </div>
+      )}
+
       <div className="chat-input-bar">
         <textarea
           className="textarea chat-input"
           value={text}
           onChange={e => setText(e.target.value)}
           onKeyDown={onTextareaKeyDown}
-          placeholder="对 Claude 说…  (⌘/Ctrl + Enter 发送,裸 Enter 换行)"
+          placeholder={isStartingUp
+            ? '等 Claude 启动完成后再发…'
+            : '对 Claude 说…  (⌘/Ctrl + Enter 发送,裸 Enter 换行)'}
           rows={3}
-          disabled={agent.status === 'gone' || sending}
+          disabled={!canSend && !text}
         />
         <button
           className="btn primary"
           onClick={send}
-          disabled={!text.trim() || agent.status === 'gone' || sending}
+          disabled={!text.trim() || !canSend}
         >
-          {sending ? '发送…' : '发送'}
+          {sending ? '发送…' : isStartingUp ? '启动中…' : '发送'}
         </button>
       </div>
       {err && <div className="err">{err}</div>}

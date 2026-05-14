@@ -329,6 +329,12 @@ export async function startHttpServer(opts: StartOpts): Promise<ServerHandle> {
     const agent = getAgent(opts.db, req.params.agentId);
     if (!agent) { res.status(404).json({ error: 'agent not found' }); return; }
     if (agent.status === 'gone') { res.status(410).json({ error: 'agent is gone' }); return; }
+    if (agent.status === 'online') {
+      // 'online' 是 scanner 刚发现还没被状态机识别的初始状态;
+      // CC 此时还在 banner/auth 阶段,send 进去会被吃掉
+      res.status(425).json({ error: 'agent is still starting up; wait until status becomes idle' });
+      return;
+    }
     const text = typeof req.body?.text === 'string' ? req.body.text : '';
     if (!text.trim()) { res.status(400).json({ error: 'text required' }); return; }
     try {
