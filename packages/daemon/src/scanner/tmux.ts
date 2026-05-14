@@ -129,3 +129,52 @@ export async function capturePane(target: string, lines = 50): Promise<string> {
     return '';
   }
 }
+
+// ─── M3:spawn / kill 用的 tmux wrappers ──────────────
+
+/**
+ * 新建 tmux session(如果不存在),供 spawn 时用作宿主。
+ * 已存在则 no-op。
+ */
+export async function ensureTmuxSession(sessionName: string): Promise<void> {
+  try {
+    await pexec(`tmux has-session -t '${sessionName}'`);
+  } catch {
+    // session 不存在,新建一个 detached
+    await pexec(`tmux new-session -d -s '${sessionName}'`);
+  }
+}
+
+/**
+ * 在指定 session 里开一个新 window 跑指定命令,返回新 pane 的 %N id。
+ * - cwd 决定窗口的初始工作目录
+ * - command 是 shell 字符串(可以带参数)
+ * - 返回的 pane id 形如 '%7'
+ */
+export async function newWindowWithCommand(opts: {
+  sessionName: string;
+  windowName?: string;
+  cwd: string;
+  command: string;
+}): Promise<{ paneId: string; windowIndex: number }> {
+  const escWindow = (opts.windowName ?? 'worker').replace(/'/g, `'"'"'`);
+  const escCwd = opts.cwd.replace(/'/g, `'"'"'`);
+  const escCmd = opts.command.replace(/'/g, `'"'"'`);
+  // -P 让 tmux 打印新 pane 的格式化信息
+  const { stdout } = await pexec(
+    `tmux new-window -t '${opts.sessionName}:' -n '${escWindow}' -c '${escCwd}' -P -F '#{pane_id}|#{window_index}' '${escCmd}'`,
+  );
+  const trimmed = stdout.trim();
+  const [paneId, winIdx] = trimmed.split('|');
+  if (!paneId || !paneId.startsWith('%')) {
+    throw new Error(`tmux new-window unexpected output: ${trimmed}`);
+  }
+  return { paneId, windowIndex: Number(winIdx) };
+}
+
+/**
+ * 杀掉指定 pane(默认情况会同时关闭它所在 window 如果 window 只有一个 pane)。
+ */
+export async function killPane(target: string): Promise<void> {
+  await pexec(`tmux kill-pane -t '${target}'`);
+}

@@ -73,6 +73,26 @@ const MIGRATIONS: Migration[] = [
       );
     `,
   },
+
+  {
+    version: 3,
+    sql: `
+      -- M3:agents 加 is_spawned 标记(只能 kill AgentBay spawn 的)
+      ALTER TABLE agents ADD COLUMN is_spawned INTEGER NOT NULL DEFAULT 0;
+
+      -- M3:worker_profile —— 预注册的工人画像,可以用来 spawn 时填默认
+      CREATE TABLE worker_profiles (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        role TEXT,
+        command TEXT NOT NULL,
+        cwd TEXT NOT NULL,
+        group_id TEXT REFERENCES groups(id) ON DELETE SET NULL,
+        description TEXT,
+        created_at INTEGER NOT NULL
+      );
+    `,
+  },
 ];
 
 export function runMigrations(db: Database.Database): void {

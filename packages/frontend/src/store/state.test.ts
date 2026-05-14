@@ -5,7 +5,7 @@ import type { Agent, Group, Topic, Message } from '@agent-bay/shared';
 const a1: Agent = {
   id: '%0', name: 'alice', role: null, tmuxTarget: '%0', pid: 1,
   tool: 'claude-code', status: 'online', statusMeta: null, groupId: null,
-  lastSeenAt: 1, createdAt: 1,
+  lastSeenAt: 1, createdAt: 1, isSpawned: false,
 };
 const g1: Group = { id: 'g1', name: 'team', description: null, isDm: false, createdAt: 1 };
 const t1: Topic = { id: 't1', groupId: 'g1', title: 'plan', state: 'open', resolvedAt: null, createdAt: 1, createdBy: null };

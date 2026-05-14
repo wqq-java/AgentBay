@@ -10,6 +10,8 @@ import {
 } from '../store/topics.js';
 import { insertMessage, listMessagesByTopic, listUnreadMessages, markRead } from '../store/messages.js';
 import { listGroups, getOrCreateDmGroup } from '../store/groups.js';
+import { spawnWorker, killWorker, waitForAgent } from '../orchestrator/spawn.js';
+import { loadConfig } from '../config/config.js';
 
 type BroadcastFn = (event: ServerEvent) => void;
 
@@ -19,6 +21,8 @@ export interface ToolContext {
   callerAgentId: string | null;  // null 表示来自 human/external(如 HTTP API);MCP 调用一般都有
   /** tmux send-keys 实现(注入便于测试) */
   sendKeys: (target: string, body: string, opts?: { enter?: boolean }) => Promise<void>;
+  /** spawn 用的 config getter(每次 spawn 重读,避免重启 daemon 才生效) */
+  getConfig?: () => ReturnType<typeof loadConfig>;
 }
 
 // ── tool 1: list_agents ────────────────────────────────
@@ -251,4 +255,73 @@ export function resolveTopicTool(ctx: ToolContext, args: ResolveTopicArgs): Reso
   const topic = dbResolveTopic(ctx.db, args.topic_id);
   if (topic) ctx.broadcast({ type: 'topic-updated', topic });
   return { topic };
+}
+
+// ── M3 tool 8: spawn_agent ─────────────────────────────
+
+export interface SpawnAgentArgs {
+  command: string;
+  cwd: string;
+  name?: string;
+  group_id?: string | null;
+  role?: string | null;
+  wait_timeout_ms?: number;
+}
+
+export interface SpawnAgentResult {
+  agent_id: string;
+  tmux_target: string;
+  name: string;
+}
+
+export async function spawnAgentTool(ctx: ToolContext, args: SpawnAgentArgs): Promise<SpawnAgentResult> {
+  const config = ctx.getConfig?.() ?? loadConfig();
+  const r = await spawnWorker(ctx.db, config, {
+    command: args.command,
+    cwd: args.cwd,
+    name: args.name,
+    groupId: args.group_id ?? null,
+    role: args.role ?? null,
+    waitTimeoutMs: args.wait_timeout_ms,
+  }, ctx.broadcast);
+  return { agent_id: r.agent.id, tmux_target: r.agent.tmuxTarget, name: r.agent.name };
+}
+
+// ── M3 tool 9: kill_agent ──────────────────────────────
+
+export interface KillAgentArgs {
+  agent_id: string;
+  force?: boolean;
+}
+
+export interface KillAgentResult {
+  killed_target: string;
+}
+
+export async function killAgentTool(ctx: ToolContext, args: KillAgentArgs): Promise<KillAgentResult> {
+  const r = await killWorker(ctx.db, { agentId: args.agent_id, force: args.force });
+  return { killed_target: r.killedTarget };
+}
+
+// ── M3 tool 10: wait_for_agent ─────────────────────────
+
+export interface WaitForAgentArgs {
+  agent_id?: string;
+  agent_name?: string;
+  timeout_ms?: number;
+}
+
+export interface WaitForAgentResult {
+  agent_id: string;
+  name: string;
+  status: string;
+}
+
+export async function waitForAgentTool(ctx: ToolContext, args: WaitForAgentArgs): Promise<WaitForAgentResult> {
+  const a = await waitForAgent(ctx.db, {
+    agentId: args.agent_id,
+    agentName: args.agent_name,
+    timeoutMs: args.timeout_ms,
+  });
+  return { agent_id: a.id, name: a.name, status: a.status };
 }

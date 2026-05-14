@@ -33,6 +33,7 @@ function mk(overrides: Partial<Agent> = {}): Agent {
     status: 'online',
     statusMeta: null,
     groupId: null,
+    isSpawned: false,
     lastSeenAt: Date.now(),
     createdAt: Date.now(),
     ...overrides,

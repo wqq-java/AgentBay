@@ -9,18 +9,57 @@ import { useAppStore } from '../store/state.js';
 import {
   createTopic, sendKeystrokes, addAgentToGroup, createGroup,
   renameAgent as apiRenameAgent, fetchMessages,
+  spawnAgent, killAgent,
+  listWorkerProfiles, createWorkerProfile, deleteWorkerProfile,
+  fetchConfig,
+  type AppConfig,
 } from '../api/client.js';
-import type { Agent, Topic, Message } from '@agent-bay/shared';
+import type { Agent, Topic, Message, WorkerProfile } from '@agent-bay/shared';
 
 export function MainArea() {
   const selectedAgentId = useAppStore(s => s.selectedAgentId);
   const selectedGroupId = useAppStore(s => s.selectedGroupId);
   const selectedTopicId = useAppStore(s => s.selectedTopicId);
+  const view = useAppStore(s => s.view);
 
+  if (view === 'workers') return <WorkerProfilesView />;
   if (selectedTopicId) return <TopicView topicId={selectedTopicId} />;
   if (selectedGroupId) return <GroupView groupId={selectedGroupId} />;
   if (selectedAgentId) return <AgentView agentId={selectedAgentId} />;
   return <EmptyView />;
+}
+
+// ──────────────────────────────────────────────────────
+// 共用:模板 + 键位按钮
+
+const TEMPLATES = [
+  { label: '/clear', text: '/clear' },
+  { label: '/compact', text: '/compact' },
+  { label: '/help', text: '/help' },
+  { label: '继续', text: '继续' },
+  { label: 'Ctrl-C 一次', text: '', sendKey: 'C-c' },
+  { label: 'ESC', text: '', sendKey: 'Escape' },
+];
+
+const KEY_BUTTONS: Array<{ label: string; key: string }> = [
+  { label: 'Enter', key: 'Enter' },
+  { label: 'Esc', key: 'Escape' },
+  { label: 'Ctrl-C', key: 'C-c' },
+  { label: 'Ctrl-D', key: 'C-d' },
+  { label: 'Tab', key: 'Tab' },
+  { label: '↑', key: 'Up' },
+  { label: '↓', key: 'Down' },
+];
+
+async function sendRawKey(agentId: string, key: string) {
+  // /api/send 只送字符,key 通过把 text='' enter=true 模拟 Enter;其他键暂用文本拼
+  // 实际想要专门的"按键 endpoint"在 M3.5 加;此处仅 Enter 通过 enter:true 走
+  if (key === 'Enter') {
+    await sendKeystrokes(agentId, '', true);
+    return;
+  }
+  // 其他键 daemon 暂不支持;先 alert 提示用户(M3.5 后端会加 /api/send-key)
+  throw new Error(`按键 "${key}" 暂未在后端支持(M3.5 加,目前只支持 Enter)`);
 }
 
 // ──────────────────────────────────────────────────────
@@ -62,6 +101,7 @@ function EmptyView() {
 function AgentView({ agentId }: { agentId: string }) {
   const agent = useAppStore(s => s.agents[agentId]);
   const groups = useAppStore(s => s.groups);
+  const selectAgent = useAppStore(s => s.selectAgent);
   const [text, setText] = useState('');
   const [renaming, setRenaming] = useState(false);
   const [newName, setNewName] = useState('');
@@ -76,6 +116,23 @@ function AgentView({ agentId }: { agentId: string }) {
     catch (e) { setErr((e as Error).message); }
   }
 
+  async function applyTemplate(t: typeof TEMPLATES[number]) {
+    setErr(null);
+    try {
+      if (t.sendKey) {
+        await sendRawKey(agent.id, t.sendKey);
+      } else {
+        await sendKeystrokes(agent.id, t.text, true); // 模板默认带回车
+      }
+    } catch (e) { setErr((e as Error).message); }
+  }
+
+  async function pressKey(key: string) {
+    setErr(null);
+    try { await sendRawKey(agent.id, key); }
+    catch (e) { setErr((e as Error).message); }
+  }
+
   async function rename() {
     if (!newName.trim()) return;
     try { await apiRenameAgent(agent.id, newName.trim()); setRenaming(false); }
@@ -85,6 +142,14 @@ function AgentView({ agentId }: { agentId: string }) {
   async function assignToGroup(gid: string) {
     try { await addAgentToGroup(gid, agent.id); }
     catch (e) { setErr((e as Error).message); }
+  }
+
+  async function doKill() {
+    if (!confirm(`确认杀掉 agent ${agent.name}?(只能杀 spawn 出来的)`)) return;
+    try {
+      await killAgent(agent.id);
+      selectAgent(null);
+    } catch (e) { setErr((e as Error).message); }
   }
 
   return (
@@ -101,7 +166,11 @@ function AgentView({ agentId }: { agentId: string }) {
           ) : (
             <>
               <h2 className="card-title">{agent.name}</h2>
+              {agent.isSpawned && <span className="badge spawned">SPAWNED</span>}
               <button className="btn small ghost" onClick={() => { setRenaming(true); setNewName(agent.name); }}>改名</button>
+              {agent.isSpawned && agent.status !== 'gone' && (
+                <button className="btn small danger" onClick={doKill}>杀掉</button>
+              )}
             </>
           )}
         </div>
@@ -114,10 +183,10 @@ function AgentView({ agentId }: { agentId: string }) {
           </dd>
         </dl>
 
-        {!agent.groupId && Object.values(groups).length > 0 && (
-          <div className="row">
+        {!agent.groupId && Object.values(groups).filter(g => !g.isDm).length > 0 && (
+          <div className="row wrap">
             <span className="muted">加入 group:</span>
-            {Object.values(groups).map(g => (
+            {Object.values(groups).filter(g => !g.isDm).map(g => (
               <button key={g.id} className="btn small" onClick={() => assignToGroup(g.id)}>{g.name}</button>
             ))}
           </div>
@@ -126,7 +195,7 @@ function AgentView({ agentId }: { agentId: string }) {
 
       <div className="card">
         <h3>发文本到 pane</h3>
-        <p className="muted small">输入后默认不送回车——agent 看得到但不会立刻执行。勾上"含回车"会触发 submit。</p>
+        <p className="muted small">默认不送回车——agent 看得到但不会立刻执行。勾上"含回车"会触发 submit。</p>
         <textarea
           className="textarea"
           value={text}
@@ -141,7 +210,173 @@ function AgentView({ agentId }: { agentId: string }) {
           </label>
           <button className="btn primary" onClick={send} disabled={!text || agent.status === 'gone'}>发送</button>
         </div>
+
+        <div className="row wrap" style={{ marginTop: 12 }}>
+          <span className="muted">快捷键:</span>
+          {KEY_BUTTONS.map(k => (
+            <button
+              key={k.key}
+              className="btn small"
+              onClick={() => pressKey(k.key)}
+              disabled={agent.status === 'gone' || k.key !== 'Enter'}
+              title={k.key === 'Enter' ? '送回车' : 'M3.5 加'}
+            >{k.label}</button>
+          ))}
+        </div>
+
+        <div className="row wrap" style={{ marginTop: 8 }}>
+          <span className="muted">模板:</span>
+          {TEMPLATES.map(t => (
+            <button
+              key={t.label}
+              className="btn small"
+              onClick={() => applyTemplate(t)}
+              disabled={agent.status === 'gone' || (!!t.sendKey && t.sendKey !== 'Enter')}
+              title={t.sendKey ? `按键 ${t.sendKey}(M3.5 加)` : `输入 ${t.text} + 回车`}
+            >{t.label}</button>
+          ))}
+        </div>
         {err && <div className="err">{err}</div>}
+      </div>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────
+// M3:Worker profile 管理 + Spawn 对话框
+
+function WorkerProfilesView() {
+  const [profiles, setProfiles] = useState<WorkerProfile[]>([]);
+  const [config, setConfig] = useState<AppConfig | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [spawningId, setSpawningId] = useState<string | null>(null);
+  const groups = useAppStore(s => s.groups);
+  const setView = useAppStore(s => s.setView);
+
+  useEffect(() => {
+    listWorkerProfiles().then(setProfiles).catch(e => setErr((e as Error).message));
+    fetchConfig().then(setConfig).catch(() => { /* ignore */ });
+  }, []);
+
+  async function reloadProfiles() {
+    setProfiles(await listWorkerProfiles());
+  }
+
+  async function spawnFromProfile(p: WorkerProfile) {
+    setErr(null); setSpawningId(p.id);
+    try {
+      await spawnAgent({
+        command: p.command,
+        cwd: p.cwd,
+        name: p.name,
+        group_id: p.groupId,
+        role: p.role,
+      });
+      // 成功后跳回主视图,新 agent 已在 sidebar
+      setView('main');
+    } catch (e) { setErr((e as Error).message); }
+    finally { setSpawningId(null); }
+  }
+
+  async function delProfile(id: string) {
+    if (!confirm('删除这个 profile?')) return;
+    await deleteWorkerProfile(id);
+    await reloadProfiles();
+  }
+
+  return (
+    <div className="main-pad">
+      <div className="row" style={{ marginBottom: 12 }}>
+        <h2 style={{ flex: 1, margin: 0 }}>Worker Profiles</h2>
+        <button className="btn ghost" onClick={() => setView('main')}>← 返回</button>
+        <button className="btn primary" onClick={() => setCreating(true)}>+ 新 Profile</button>
+      </div>
+
+      {config && (
+        <div className="card">
+          <h3>当前 spawn 白名单(来自 ~/.agent-bay/config.json)</h3>
+          <dl className="kv">
+            <dt>commands</dt><dd>{config.spawn.commands.join(', ') || <em>(空——禁止 spawn)</em>}</dd>
+            <dt>cwds</dt><dd>{config.spawn.cwds.length ? config.spawn.cwds.join(', ') : <em>(无限制)</em>}</dd>
+            <dt>maxConcurrent</dt><dd>{config.spawn.maxConcurrent}</dd>
+            <dt>tmux session</dt><dd><code>{config.defaultTmuxSession}</code></dd>
+          </dl>
+        </div>
+      )}
+
+      {err && <div className="err">{err}</div>}
+
+      {profiles.length === 0 && !creating && <em className="muted">还没有 profile · 创建一个吧</em>}
+
+      {profiles.map(p => (
+        <div key={p.id} className="card">
+          <div className="card-head">
+            <h3 style={{ flex: 1, margin: 0 }}>{p.name}</h3>
+            <button className="btn small primary" onClick={() => spawnFromProfile(p)} disabled={spawningId === p.id}>
+              {spawningId === p.id ? 'Spawning…' : 'Spawn'}
+            </button>
+            <button className="btn small ghost" onClick={() => delProfile(p.id)}>删除</button>
+          </div>
+          <dl className="kv">
+            <dt>command</dt><dd><code>{p.command}</code></dd>
+            <dt>cwd</dt><dd><code>{p.cwd}</code></dd>
+            {p.role && <><dt>role</dt><dd>{p.role}</dd></>}
+            {p.groupId && <><dt>group</dt><dd>{groups[p.groupId]?.name ?? p.groupId}</dd></>}
+            {p.description && <><dt>desc</dt><dd className="muted">{p.description}</dd></>}
+          </dl>
+        </div>
+      ))}
+
+      {creating && <NewProfileForm onCancel={() => setCreating(false)} onCreated={() => { setCreating(false); reloadProfiles(); }} />}
+    </div>
+  );
+}
+
+function NewProfileForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: () => void }) {
+  const groups = useAppStore(s => s.groups);
+  const [name, setName] = useState('');
+  const [command, setCommand] = useState('claude');
+  const [cwd, setCwd] = useState('');
+  const [role, setRole] = useState('');
+  const [groupId, setGroupId] = useState('');
+  const [err, setErr] = useState<string | null>(null);
+
+  async function submit() {
+    setErr(null);
+    try {
+      await createWorkerProfile({
+        name: name.trim(),
+        command: command.trim(),
+        cwd: cwd.trim(),
+        role: role.trim() || null,
+        group_id: groupId || null,
+      });
+      onCreated();
+    } catch (e) { setErr((e as Error).message); }
+  }
+
+  return (
+    <div className="card">
+      <h3>新 Worker Profile</h3>
+      <dl className="kv form-kv">
+        <dt>name</dt><dd><input className="input" value={name} onChange={e => setName(e.target.value)} placeholder="frontend-aimeter" /></dd>
+        <dt>command</dt><dd><input className="input" value={command} onChange={e => setCommand(e.target.value)} placeholder="claude / codex" /></dd>
+        <dt>cwd</dt><dd><input className="input" value={cwd} onChange={e => setCwd(e.target.value)} placeholder="/Users/eoi/EOI/aimeter" /></dd>
+        <dt>role</dt><dd><input className="input" value={role} onChange={e => setRole(e.target.value)} placeholder="可选,如 frontend" /></dd>
+        <dt>group</dt><dd>
+          <select className="input" value={groupId} onChange={e => setGroupId(e.target.value)}>
+            <option value="">(不分配)</option>
+            {Object.values(groups).filter(g => !g.isDm).map(g => (
+              <option key={g.id} value={g.id}>{g.name}</option>
+            ))}
+          </select>
+        </dd>
+      </dl>
+      {err && <div className="err">{err}</div>}
+      <div className="row">
+        <button className="btn ghost" onClick={onCancel}>取消</button>
+        <button className="btn primary" onClick={submit} disabled={!name.trim() || !command.trim() || !cwd.trim()}>创建</button>
       </div>
     </div>
   );

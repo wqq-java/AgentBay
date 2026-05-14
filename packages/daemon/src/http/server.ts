@@ -19,7 +19,12 @@ import { listAgents, getAgent, updateAgentGroup, renameAgent } from '../store/ag
 import { listGroups, createGroup, getGroup } from '../store/groups.js';
 import { listAllTopics, createTopic, getTopic, resolveTopic } from '../store/topics.js';
 import { listMessagesByTopic } from '../store/messages.js';
+import {
+  listWorkerProfiles, createWorkerProfile, deleteWorkerProfile,
+} from '../store/worker-profiles.js';
 import { sendKeys } from '../scanner/tmux.js';
+import { spawnWorker, killWorker } from '../orchestrator/spawn.js';
+import { loadConfig } from '../config/config.js';
 import type { SseHub } from './sse.js';
 
 export interface StartOpts {
@@ -55,6 +60,24 @@ const createTopicSchema = z.object({
 });
 
 const renameAgentSchema = z.object({ name: z.string().min(1).max(60) });
+
+const spawnSchema = z.object({
+  command: z.string().min(1),
+  cwd: z.string().min(1),
+  name: z.string().optional(),
+  group_id: z.string().nullable().optional(),
+  role: z.string().nullable().optional(),
+  wait_timeout_ms: z.number().int().positive().optional(),
+});
+
+const workerProfileSchema = z.object({
+  name: z.string().min(1).max(60),
+  command: z.string().min(1),
+  cwd: z.string().min(1),
+  role: z.string().nullable().optional(),
+  group_id: z.string().nullable().optional(),
+  description: z.string().nullable().optional(),
+});
 
 export async function startHttpServer(opts: StartOpts): Promise<ServerHandle> {
   const app = express();
@@ -170,6 +193,77 @@ export async function startHttpServer(opts: StartOpts): Promise<ServerHandle> {
     if (!topic) { res.status(404).json({ error: 'topic not found' }); return; }
     opts.sse.broadcast({ type: 'topic-updated', topic });
     res.json({ topic });
+  });
+
+  // ── M3:调度 endpoints ─────────────────────────────
+
+  app.post('/api/agents', async (req, res) => {
+    const parsed = spawnSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'invalid', issues: parsed.error.issues });
+      return;
+    }
+    try {
+      const result = await spawnWorker(opts.db, loadConfig(), {
+        command: parsed.data.command,
+        cwd: parsed.data.cwd,
+        name: parsed.data.name,
+        groupId: parsed.data.group_id ?? null,
+        role: parsed.data.role ?? null,
+        waitTimeoutMs: parsed.data.wait_timeout_ms,
+      }, opts.sse.broadcast);
+      res.json({ agent: result.agent });
+    } catch (e) {
+      res.status(400).json({ error: (e as Error).message });
+    }
+  });
+
+  app.delete('/api/agents/:id', async (req, res) => {
+    const force = req.query.force === '1' || req.query.force === 'true';
+    try {
+      const r = await killWorker(opts.db, { agentId: req.params.id, force });
+      res.json(r);
+    } catch (e) {
+      res.status(400).json({ error: (e as Error).message });
+    }
+  });
+
+  // ── M3:worker profiles ────────────────────────────
+
+  app.get('/api/worker-profiles', (_req, res) => {
+    res.json({ profiles: listWorkerProfiles(opts.db) });
+  });
+
+  app.post('/api/worker-profiles', (req, res) => {
+    const parsed = workerProfileSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: 'invalid', issues: parsed.error.issues });
+      return;
+    }
+    try {
+      const profile = createWorkerProfile(opts.db, {
+        name: parsed.data.name,
+        command: parsed.data.command,
+        cwd: parsed.data.cwd,
+        role: parsed.data.role ?? null,
+        groupId: parsed.data.group_id ?? null,
+        description: parsed.data.description ?? null,
+      });
+      res.json({ profile });
+    } catch (e) {
+      res.status(409).json({ error: (e as Error).message });
+    }
+  });
+
+  app.delete('/api/worker-profiles/:id', (req, res) => {
+    deleteWorkerProfile(opts.db, req.params.id);
+    res.json({ ok: true });
+  });
+
+  // ── M3:配置查询 ─────────────────────────────────
+
+  app.get('/api/config', (_req, res) => {
+    res.json({ config: loadConfig() });
   });
 
   app.get('/api/events', (req, res) => {

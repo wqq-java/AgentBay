@@ -21,7 +21,7 @@ function mkAgent(id: string, name: string, opts: Partial<Agent> = {}): Agent {
   return {
     id, name, role: null, tmuxTarget: id, pid: 1, tool: 'claude-code',
     status: 'online', statusMeta: null, groupId: null,
-    lastSeenAt: Date.now(), createdAt: Date.now(), ...opts,
+    lastSeenAt: Date.now(), createdAt: Date.now(), isSpawned: false, ...opts,
   };
 }
 

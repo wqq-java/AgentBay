@@ -19,7 +19,7 @@ let topicId: string;
 function mkAgent(id: string): Agent {
   return {
     id, name: id, role: null, tmuxTarget: id, pid: 1, tool: 'claude-code',
-    status: 'online', statusMeta: null, groupId: null,
+    status: 'online', statusMeta: null, groupId: null, isSpawned: false,
     lastSeenAt: Date.now(), createdAt: Date.now(),
   };
 }

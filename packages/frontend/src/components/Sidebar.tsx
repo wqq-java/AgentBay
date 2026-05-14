@@ -58,7 +58,24 @@ export function Sidebar() {
           ))}
         </div>
       )}
+
+      <WorkerProfilesNav />
     </>
+  );
+}
+
+function WorkerProfilesNav() {
+  const view = useAppStore(s => s.view);
+  const setView = useAppStore(s => s.setView);
+  return (
+    <div className="sb-section sb-bottom">
+      <div
+        className={`sb-nav-row ${view === 'workers' ? 'sb-selected' : ''}`}
+        onClick={() => setView(view === 'workers' ? 'main' : 'workers')}
+      >
+        ⚙ Worker Profiles
+      </div>
+    </div>
   );
 }
 

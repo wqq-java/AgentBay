@@ -51,6 +51,7 @@ function paneToAgent(p: TmuxPane, now: number, existing: Agent | null): Agent {
     status,
     statusMeta: existing?.statusMeta ?? null,
     groupId: existing?.groupId ?? null,
+    isSpawned: existing?.isSpawned ?? false,
     lastSeenAt: now,
     createdAt: existing?.createdAt ?? now,
   };

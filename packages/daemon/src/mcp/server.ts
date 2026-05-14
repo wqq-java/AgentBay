@@ -7,8 +7,11 @@ import { z } from 'zod';
 import type Database from 'better-sqlite3';
 import {
   listAgentsTool, listTopicsTool, sendMessageTool, sendDmTool, readTopicTool,
-  createTopicTool, resolveTopicTool, type ToolContext,
+  createTopicTool, resolveTopicTool,
+  spawnAgentTool, killAgentTool, waitForAgentTool,
+  type ToolContext,
 } from './tools.js';
+import { loadConfig } from '../config/config.js';
 import { sendKeys } from '../scanner/tmux.js';
 
 export interface CreateMcpServerOpts {
@@ -30,6 +33,7 @@ export function createMcpServer(opts: CreateMcpServerOpts): McpServer {
     callerAgentId: opts.callerAgentId,
     broadcast: opts.broadcast ?? (() => { /* no-op */ }),
     sendKeys,
+    getConfig: () => loadConfig(),
   };
 
   // 工具响应包装:MCP tool 必须返回 { content: [{type:'text', text:...}] }
@@ -116,6 +120,52 @@ export function createMcpServer(opts: CreateMcpServerOpts): McpServer {
       topic_id: z.string().describe('要 resolve 的 topic id'),
     },
     async (args) => ok(resolveTopicTool(ctx, args)),
+  );
+
+  // ── M3 调度工具 ─────────────────────────────────
+
+  server.tool(
+    'spawn_agent',
+    'M3:在 tmux 新 window 起一个 worker(命令必须在 ~/.agent-bay/config.json 白名单里)。返回新 agent。',
+    {
+      command: z.string().describe('启动命令,例 "claude" 或 "codex --model gpt-5"'),
+      cwd: z.string().describe('工作目录(必须在白名单 cwds 前缀里,如果配置了)'),
+      name: z.string().optional().describe('显示名;tmux window name'),
+      group_id: z.string().nullable().optional().describe('spawn 后自动加入哪个 group'),
+      role: z.string().nullable().optional().describe('agent 角色画像'),
+      wait_timeout_ms: z.number().int().positive().optional().describe('等 scanner 看到新 pane 的最长 ms,默认 8000'),
+    },
+    async (args) => {
+      try { return ok(await spawnAgentTool(ctx, args)); }
+      catch (e) { return err((e as Error).message); }
+    },
+  );
+
+  server.tool(
+    'kill_agent',
+    'M3:杀掉 worker(只能杀 isSpawned=true 的;force=true 跳过此检查,慎用)。',
+    {
+      agent_id: z.string().describe('要杀的 agent id'),
+      force: z.boolean().optional().describe('跳过 isSpawned 检查'),
+    },
+    async (args) => {
+      try { return ok(await killAgentTool(ctx, args)); }
+      catch (e) { return err((e as Error).message); }
+    },
+  );
+
+  server.tool(
+    'wait_for_agent',
+    'M3:等待 agent 出现并返回。可按 id 或 name 等。超时 throw。',
+    {
+      agent_id: z.string().optional().describe('要等的 agent id(精确匹配)'),
+      agent_name: z.string().optional().describe('要等的 agent 显示名'),
+      timeout_ms: z.number().int().positive().optional().describe('最长等多久 ms,默认 10000'),
+    },
+    async (args) => {
+      try { return ok(await waitForAgentTool(ctx, args)); }
+      catch (e) { return err((e as Error).message); }
+    },
   );
 
   return server;

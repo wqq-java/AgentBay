@@ -17,14 +17,27 @@ export type AgentStatus =
 export interface Agent {
   id: string;                                // = tmuxTarget,如 "main:0.1"
   name: string;                              // 显示名,可由用户改;默认从 pane title 或 tool 推断
-  role: string | null;                       // 角色画像,M3+ 使用
+  role: string | null;                       // 角色画像
   tmuxTarget: string;                        // tmux send-keys -t 用的 target
   pid: number | null;                        // pane 进程 pid(用于活跃检测)
   tool: AgentTool;
   status: AgentStatus;
   statusMeta: Record<string, unknown> | null; // 如 { rateLimitResetsAt: 1735000000 }
   groupId: string | null;                    // 所属 group(可空,表未分配)
+  isSpawned: boolean;                        // M3:由 AgentBay spawn 出来的(允许 kill);false 表示用户手起的
   lastSeenAt: number;
+  createdAt: number;
+}
+
+/** Worker profile —— 预注册的工人画像,spawn 时可用来填默认值 */
+export interface WorkerProfile {
+  id: string;
+  name: string;
+  role: string | null;
+  command: string;       // 起动命令,例 "claude" / "codex --model gpt-5"
+  cwd: string;           // 工作目录
+  groupId: string | null; // spawn 后自动加入哪个 group
+  description: string | null;
   createdAt: number;
 }
 

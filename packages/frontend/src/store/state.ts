@@ -18,6 +18,7 @@ interface State {
   selectedAgentId: string | null;
   selectedGroupId: string | null;
   selectedTopicId: string | null;
+  view: 'main' | 'workers';
 
   applySnapshot: (snap: Snapshot) => void;
   applyEvent: (event: ServerEvent) => void;
@@ -26,6 +27,7 @@ interface State {
   selectAgent: (id: string | null) => void;
   selectGroup: (id: string | null) => void;
   selectTopic: (id: string | null) => void;
+  setView: (view: 'main' | 'workers') => void;
 }
 
 function indexBy<T extends { id: string }>(items: T[]): Dict<T> {
@@ -43,6 +45,7 @@ export const useAppStore = create<State>((set) => ({
   selectedAgentId: null,
   selectedGroupId: null,
   selectedTopicId: null,
+  view: 'main',
 
   applySnapshot: (snap) => set({
     agents: indexBy(snap.agents),
@@ -85,7 +88,8 @@ export const useAppStore = create<State>((set) => ({
   })),
 
   setConnected: (connected) => set({ connected }),
-  selectAgent: (id) => set({ selectedAgentId: id }),
-  selectGroup: (id) => set({ selectedGroupId: id, selectedTopicId: null }),
-  selectTopic: (id) => set({ selectedTopicId: id }),
+  selectAgent: (id) => set({ selectedAgentId: id, view: 'main' }),
+  selectGroup: (id) => set({ selectedGroupId: id, selectedTopicId: null, view: 'main' }),
+  selectTopic: (id) => set({ selectedTopicId: id, view: 'main' }),
+  setView: (view) => set({ view }),
 }));

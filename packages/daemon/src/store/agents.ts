@@ -11,6 +11,7 @@ interface Row {
   status: AgentStatus;
   status_meta: string | null;
   group_id: string | null;
+  is_spawned: number;
   last_seen_at: number;
   created_at: number;
 }
@@ -26,6 +27,7 @@ function rowToAgent(r: Row): Agent {
     status: r.status,
     statusMeta: r.status_meta ? JSON.parse(r.status_meta) : null,
     groupId: r.group_id,
+    isSpawned: r.is_spawned === 1,
     lastSeenAt: r.last_seen_at,
     createdAt: r.created_at,
   };
@@ -33,8 +35,8 @@ function rowToAgent(r: Row): Agent {
 
 export function upsertAgent(db: Database.Database, a: Agent): void {
   db.prepare(`
-    INSERT INTO agents (id, name, role, tmux_target, pid, tool, status, status_meta, group_id, last_seen_at, created_at)
-    VALUES (@id, @name, @role, @tmux_target, @pid, @tool, @status, @status_meta, @group_id, @last_seen_at, @created_at)
+    INSERT INTO agents (id, name, role, tmux_target, pid, tool, status, status_meta, group_id, is_spawned, last_seen_at, created_at)
+    VALUES (@id, @name, @role, @tmux_target, @pid, @tool, @status, @status_meta, @group_id, @is_spawned, @last_seen_at, @created_at)
     ON CONFLICT(id) DO UPDATE SET
       name = excluded.name,
       role = excluded.role,
@@ -44,6 +46,7 @@ export function upsertAgent(db: Database.Database, a: Agent): void {
       status = excluded.status,
       status_meta = excluded.status_meta,
       group_id = excluded.group_id,
+      is_spawned = MAX(agents.is_spawned, excluded.is_spawned),
       last_seen_at = excluded.last_seen_at
   `).run({
     id: a.id,
@@ -55,9 +58,14 @@ export function upsertAgent(db: Database.Database, a: Agent): void {
     status: a.status,
     status_meta: a.statusMeta ? JSON.stringify(a.statusMeta) : null,
     group_id: a.groupId,
+    is_spawned: a.isSpawned ? 1 : 0,
     last_seen_at: a.lastSeenAt,
     created_at: a.createdAt,
   });
+}
+
+export function markAgentSpawned(db: Database.Database, id: string): void {
+  db.prepare(`UPDATE agents SET is_spawned = 1 WHERE id = ?`).run(id);
 }
 
 export function listAgents(db: Database.Database): Agent[] {
