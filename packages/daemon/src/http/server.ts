@@ -32,6 +32,7 @@ import { handleHookEvent } from '../hooks/router.js';
 import { findAgentJsonl } from '../conversation/discovery.js';
 import { readConversation } from '../conversation/reader.js';
 import { createTeam, getTeamTemplates } from '../orchestrator/teams.js';
+import { listProjectsUnder } from '../projects/list.js';
 import type { SseHub } from './sse.js';
 
 export interface StartOpts {
@@ -342,6 +343,25 @@ export async function startHttpServer(opts: StartOpts): Promise<ServerHandle> {
 
   app.get('/api/team-templates', (_req, res) => {
     res.json({ templates: getTeamTemplates() });
+  });
+
+  // ── 项目目录选择 ─────────────────────────────────
+
+  app.get('/api/project-roots', (_req, res) => {
+    res.json({ roots: loadConfig().projectRoots });
+  });
+
+  app.get('/api/projects', async (req, res) => {
+    const cfg = loadConfig();
+    const root = typeof req.query.root === 'string' && req.query.root
+      ? req.query.root
+      : (cfg.projectRoots[0] ?? '~');  // 默认用户 home dir
+    try {
+      const projects = await listProjectsUnder(root);
+      res.json({ root, projects });
+    } catch (e) {
+      res.status(400).json({ error: (e as Error).message });
+    }
   });
 
   app.post('/api/teams', async (req, res) => {

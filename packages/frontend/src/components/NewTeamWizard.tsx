@@ -1,5 +1,8 @@
 import { useEffect, useState } from 'react';
-import { fetchTeamTemplates, createTeamApi, type TeamTemplate } from '../api/client.js';
+import {
+  fetchTeamTemplates, createTeamApi, fetchProjects,
+  type TeamTemplate, type ProjectEntry,
+} from '../api/client.js';
 
 export function NewTeamWizard({ onCreated, onCancel }: {
   onCreated: (groupId: string, firstAgentId: string | null) => void;
@@ -82,14 +85,7 @@ export function NewTeamWizard({ onCreated, onCancel }: {
           </dd>
           <dt>工作目录</dt>
           <dd>
-            <input
-              className="input"
-              value={cwd}
-              onChange={e => setCwd(e.target.value)}
-              placeholder="例:/Users/eoi/EOI/aimeter"
-              disabled={busy}
-            />
-            <div className="muted small">所有 agent 起在这个 cwd;必须在 ~/.agent-bay/config.json 的 spawn.cwds 白名单里</div>
+            <ProjectPicker value={cwd} onChange={setCwd} disabled={busy} />
           </dd>
         </dl>
 
@@ -121,6 +117,119 @@ export function NewTeamWizard({ onCreated, onCancel }: {
           {busy ? '创建中…' : `🚀 启动 ${selected?.members.length ?? 0} 个 agent`}
         </button>
       </div>
+    </div>
+  );
+}
+
+function ProjectPicker({ value, onChange, disabled }: {
+  value: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
+}) {
+  const [root, setRoot] = useState('');
+  const [projects, setProjects] = useState<ProjectEntry[]>([]);
+  const [editingRoot, setEditingRoot] = useState(false);
+  const [draftRoot, setDraftRoot] = useState('');
+  const [err, setErr] = useState<string | null>(null);
+  const [showManual, setShowManual] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  async function load(r?: string) {
+    setLoading(true); setErr(null);
+    try {
+      const data = await fetchProjects(r);
+      setRoot(data.root);
+      setProjects(data.projects);
+    } catch (e) { setErr((e as Error).message); }
+    finally { setLoading(false); }
+  }
+
+  useEffect(() => { void load(); }, []);
+
+  function applyRoot() {
+    if (!draftRoot.trim()) return;
+    void load(draftRoot.trim());
+    setEditingRoot(false);
+  }
+
+  return (
+    <div className="picker">
+      <div className="picker-root-row">
+        <span className="muted small">根目录:</span>
+        {editingRoot ? (
+          <>
+            <input
+              className="input inline"
+              value={draftRoot}
+              onChange={e => setDraftRoot(e.target.value)}
+              placeholder="例:~/EOI 或 /Users/eoi/EOI"
+              autoFocus
+            />
+            <button className="btn small" onClick={applyRoot}>切换</button>
+            <button className="btn small ghost" onClick={() => setEditingRoot(false)}>取消</button>
+          </>
+        ) : (
+          <>
+            <code className="picker-root">{root || '(未设)'}</code>
+            <button className="btn small ghost" onClick={() => { setDraftRoot(root); setEditingRoot(true); }} disabled={disabled}>改</button>
+            <button className="btn small ghost" onClick={() => void load(root)} disabled={disabled}>刷新</button>
+          </>
+        )}
+      </div>
+
+      {err && (
+        <div className="err" style={{ marginTop: 8 }}>
+          {err}
+          <div className="muted small" style={{ marginTop: 4 }}>
+            没设过根?编辑 <code>~/.agent-bay/config.json</code> 加 <code>{`"projectRoots": ["~/EOI"]`}</code>,或上面"改"按钮临时切换。
+          </div>
+        </div>
+      )}
+
+      {loading && <div className="muted small" style={{ marginTop: 8 }}>列目录中…</div>}
+
+      {!loading && projects.length > 0 && (
+        <div className="project-grid">
+          {projects.map(p => (
+            <div
+              key={p.path}
+              className={`project-card ${value === p.path ? 'selected' : ''}`}
+              onClick={() => !disabled && onChange(p.path)}
+              title={p.path}
+            >
+              <div className="project-name">📁 {p.name}</div>
+              <div className="project-markers">
+                {p.markers.map(m => (
+                  <span key={m} className="marker-chip">{m}</span>
+                ))}
+                {p.markers.length === 0 && <span className="muted small">— 普通目录</span>}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ marginTop: 8 }}>
+        <button className="btn small ghost" onClick={() => setShowManual(s => !s)} disabled={disabled}>
+          {showManual ? '隐藏手动输入' : '或手动输入路径…'}
+        </button>
+        {showManual && (
+          <input
+            className="input"
+            style={{ marginTop: 4 }}
+            value={value}
+            onChange={e => onChange(e.target.value)}
+            placeholder="完整 cwd 路径"
+            disabled={disabled}
+          />
+        )}
+      </div>
+
+      {value && (
+        <div className="muted small" style={{ marginTop: 6 }}>
+          ✅ 选中:<code>{value}</code>
+        </div>
+      )}
     </div>
   );
 }

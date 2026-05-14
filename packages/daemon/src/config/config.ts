@@ -29,8 +29,10 @@ export const configSchema = z.object({
   /** ntfy 移动推送(M4 加) */
   ntfy: z.object({
     enabled: z.boolean().default(false),
-    topicUrl: z.string().optional(),  // 例:'https://ntfy.sh/your-private-topic-name'
+    topicUrl: z.string().optional(),
   }).default({}),
+  /** 项目根目录列表 —— 给"+ 新建团队"挑 cwd 时遍历这些根的子目录(P+ 加) */
+  projectRoots: z.array(z.string()).default([]),
 }).default({});
 
 export type Config = z.infer<typeof configSchema>;

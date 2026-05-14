@@ -142,6 +142,32 @@ export async function deleteWorkerProfile(id: string): Promise<void> {
 export interface AppConfig {
   spawn: { commands: string[]; cwds: string[]; maxConcurrent: number };
   defaultTmuxSession: string;
+  ntfy?: { enabled: boolean; topicUrl?: string };
+  projectRoots: string[];
+}
+
+export interface ProjectEntry {
+  path: string;
+  name: string;
+  markers: string[];
+  childCount: number;
+  mtimeMs: number;
+}
+
+export async function fetchProjectRoots(): Promise<string[]> {
+  const r = await fetch('/api/project-roots');
+  if (!r.ok) throw new Error(`project-roots ${r.status}`);
+  return (await r.json() as { roots: string[] }).roots;
+}
+
+export async function fetchProjects(root?: string): Promise<{ root: string; projects: ProjectEntry[] }> {
+  const url = root ? `/api/projects?root=${encodeURIComponent(root)}` : '/api/projects';
+  const r = await fetch(url);
+  if (!r.ok) {
+    const d = await r.json() as { error?: string; hint?: string };
+    throw new Error(d.hint ? `${d.error} · ${d.hint}` : d.error ?? `projects ${r.status}`);
+  }
+  return await r.json() as { root: string; projects: ProjectEntry[] };
 }
 
 export async function fetchConfig(): Promise<AppConfig> {
