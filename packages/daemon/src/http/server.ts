@@ -27,6 +27,8 @@ import { spawnWorker, killWorker } from '../orchestrator/spawn.js';
 import { loadConfig } from '../config/config.js';
 import { buildMasterRouter } from '../master/api.js';
 import { ensureMasterToken } from '../master/auth.js';
+import { hookEventSchema } from '../hooks/schemas.js';
+import { handleHookEvent } from '../hooks/router.js';
 import type { SseHub } from './sse.js';
 
 export interface StartOpts {
@@ -301,6 +303,19 @@ export async function startHttpServer(opts: StartOpts): Promise<ServerHandle> {
   // M4:UI 用的 master token 显示 endpoint(本地 only,无 auth 也 OK)
   app.get('/api/master-token', (_req, res) => {
     res.json({ token: masterToken });
+  });
+
+  // ── M6:CC hooks endpoint(任何 CC 实例都可推送)─────
+  app.post('/api/hook-event', (req, res) => {
+    const parsed = hookEventSchema.safeParse(req.body);
+    if (!parsed.success) {
+      // hook 失败不该阻塞 CC —— 即使 payload 校验失败也返 200
+      res.status(200).json({ ok: false, ignored: true });
+      return;
+    }
+    try { handleHookEvent(opts.db, opts.sse.broadcast, parsed.data); }
+    catch { /* swallow,不阻塞 CC */ }
+    res.status(200).json({ ok: true });
   });
 
   // ── M4:Master API(/api/master/*,Bearer token 鉴权)─────
