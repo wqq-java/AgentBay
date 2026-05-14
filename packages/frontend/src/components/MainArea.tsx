@@ -18,6 +18,9 @@ import { ChatView } from './ChatView.js';
 import { NewTeamWizard } from './NewTeamWizard.js';
 import type { Agent, Topic, Message, WorkerProfile } from '@agent-bay/shared';
 
+// 模块级稳定引用,防止 Zustand selector 返回新 [] 触发 re-render 循环
+const EMPTY_TOPIC_MSGS: Message[] = [];
+
 export function MainArea() {
   const selectedAgentId = useAppStore(s => s.selectedAgentId);
   const selectedGroupId = useAppStore(s => s.selectedGroupId);
@@ -413,7 +416,7 @@ function TopicRow({ topic, onClick }: { topic: Topic; onClick: () => void }) {
 
 function TopicView({ topicId }: { topicId: string }) {
   const topic = useAppStore(s => s.topics[topicId]);
-  const messages = useAppStore(s => s.messagesByTopic[topicId] ?? []);
+  const messages = useAppStore(s => s.messagesByTopic[topicId]) ?? EMPTY_TOPIC_MSGS;
   const agents = useAppStore(s => s.agents);
   const setMessages = useAppStore(s => s.setMessages);
   const applyEvent = useAppStore(s => s.applyEvent);

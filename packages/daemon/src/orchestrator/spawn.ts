@@ -22,6 +22,7 @@ import { checkSpawnAllowed } from '../config/config.js';
 import { ensureTmuxSession, newWindowWithCommand, killPane } from '../scanner/tmux.js';
 import {
   getAgent, markAgentSpawned, listOnlineAgents, updateAgentGroup, updateAgentStatus,
+  renameAgent,
 } from '../store/agents.js';
 import { waitForNewJsonl } from '../conversation/discovery.js';
 
@@ -87,6 +88,12 @@ export async function spawnWorker(
 
   // 标 isSpawned
   markAgentSpawned(db, agent.id);
+
+  // 显式 rename 成 spawn 时指定的 name(否则 scanner 会用 pane 标题 ——
+  // tmux 默认 pane_title 是 hostname,不直观)
+  if (opts.name) {
+    renameAgent(db, agent.id, opts.name);
+  }
 
   // 加入指定 group
   if (opts.groupId !== undefined && opts.groupId !== null) {

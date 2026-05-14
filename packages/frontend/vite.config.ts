@@ -7,6 +7,10 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      devOptions: {
+        // 开发模式不启用 SW,避免 cache 老 bundle 把 HMR 屏蔽
+        enabled: false,
+      },
       // 本地局域网 + 移动 PWA:不强 cache /api(走 fetch),只 cache 静态资源
       workbox: {
         globPatterns: ['**/*.{js,css,html,svg,ico,png}'],

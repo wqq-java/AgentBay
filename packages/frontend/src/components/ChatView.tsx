@@ -6,9 +6,13 @@ import { useAppStore } from '../store/state.js';
 import { fetchChatMessages, sendChatMessage } from '../api/client.js';
 import type { ChatMessage, ContentBlock } from '@agent-bay/shared';
 
+// 模块级稳定引用 —— 防止 selector 每次返回新 [] 触发 Zustand 无限 re-render
+const EMPTY_MESSAGES: ChatMessage[] = [];
+
 export function ChatView({ agentId }: { agentId: string }) {
   const agent = useAppStore(s => s.agents[agentId]);
-  const messages = useAppStore(s => s.chatByAgent[agentId] ?? []);
+  // 关键:selector 不要带 `?? []`(每次新引用),把 fallback 放外面
+  const messages = useAppStore(s => s.chatByAgent[agentId]) ?? EMPTY_MESSAGES;
   const setChatMessages = useAppStore(s => s.setChatMessages);
   const [text, setText] = useState('');
   const [loading, setLoading] = useState(false);
