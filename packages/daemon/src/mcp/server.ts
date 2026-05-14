@@ -6,7 +6,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import type Database from 'better-sqlite3';
 import {
-  listAgentsTool, listTopicsTool, sendMessageTool, readTopicTool,
+  listAgentsTool, listTopicsTool, sendMessageTool, sendDmTool, readTopicTool,
   createTopicTool, resolveTopicTool, type ToolContext,
 } from './tools.js';
 import { sendKeys } from '../scanner/tmux.js';
@@ -59,13 +59,28 @@ export function createMcpServer(opts: CreateMcpServerOpts): McpServer {
 
   server.tool(
     'send_message',
-    '在 topic 内发一条消息。会写入历史 + tmux send-keys 通知同 group 内的其他 agent。',
+    '在 topic 内发一条消息。会写入历史 + tmux send-keys 通知同 group 内的其他 agent。可选 image_path 附图(M2)。',
     {
       topic_id: z.string().describe('目标 topic 的 id'),
       body: z.string().describe('消息内容'),
+      image_path: z.string().optional().describe('可选图片路径,目标 agent 收到时附在文本后'),
     },
     async (args) => {
       try { return ok(await sendMessageTool(ctx, args)); }
+      catch (e) { return err((e as Error).message); }
+    },
+  );
+
+  server.tool(
+    'send_dm',
+    '给某个 agent 发 1v1 私聊(自动建/复用 DM 隐藏 group)。M2 加。',
+    {
+      to_agent_id: z.string().describe('目标 agent id'),
+      body: z.string().describe('消息内容'),
+      image_path: z.string().optional().describe('可选图片路径'),
+    },
+    async (args) => {
+      try { return ok(await sendDmTool(ctx, args)); }
       catch (e) { return err((e as Error).message); }
     },
   );

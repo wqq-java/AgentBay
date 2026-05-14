@@ -7,7 +7,7 @@ import { upsertAgent, updateAgentGroup } from '../store/agents.js';
 import { createGroup } from '../store/groups.js';
 import { createTopic, resolveTopic } from '../store/topics.js';
 import {
-  listAgentsTool, listTopicsTool, sendMessageTool, readTopicTool,
+  listAgentsTool, listTopicsTool, sendMessageTool, sendDmTool, readTopicTool,
   createTopicTool, resolveTopicTool, type ToolContext,
 } from './tools.js';
 import type { Agent, ServerEvent } from '@agent-bay/shared';
@@ -170,6 +170,61 @@ describe('create_topic', () => {
     expect(r.topic.title).toBe('new thread');
     expect(r.topic.createdBy).toBe('%caller');
     expect(events.some(e => e.type === 'topic-created')).toBe(true);
+  });
+});
+
+describe('send_dm(M2)', () => {
+  it('creates DM group + topic on first send,delivers to target', async () => {
+    upsertAgent(db, mkAgent('%alice', 'alice'));
+    upsertAgent(db, mkAgent('%bob', 'bob'));
+    const r = await sendDmTool(ctx('%alice'), { to_agent_id: '%bob', body: 'hi privately' });
+    expect(r.topic_id).toBeTruthy();
+    expect(r.delivered).toBe(true);
+    expect(sentKeys[0].target).toBe('%bob');
+    expect(sentKeys[0].body).toMatch(/DM @alice/);
+    expect(sentKeys[0].body).toMatch(/hi privately/);
+  });
+
+  it('reuses same DM group + topic on subsequent sends', async () => {
+    upsertAgent(db, mkAgent('%alice', 'alice'));
+    upsertAgent(db, mkAgent('%bob', 'bob'));
+    const r1 = await sendDmTool(ctx('%alice'), { to_agent_id: '%bob', body: 'msg 1' });
+    const r2 = await sendDmTool(ctx('%bob'), { to_agent_id: '%alice', body: 'reply' });
+    expect(r2.topic_id).toBe(r1.topic_id);
+  });
+
+  it('throws when targetting yourself', async () => {
+    upsertAgent(db, mkAgent('%alice', 'alice'));
+    await expect(sendDmTool(ctx('%alice'), { to_agent_id: '%alice', body: 'x' })).rejects.toThrow(/yourself/);
+  });
+
+  it('throws when target not found', async () => {
+    upsertAgent(db, mkAgent('%alice', 'alice'));
+    await expect(sendDmTool(ctx('%alice'), { to_agent_id: '%nope', body: 'x' })).rejects.toThrow(/not found/);
+  });
+
+  it('throws when no caller', async () => {
+    upsertAgent(db, mkAgent('%bob', 'bob'));
+    await expect(sendDmTool(ctx(null), { to_agent_id: '%bob', body: 'x' })).rejects.toThrow(/caller/);
+  });
+
+  it('image_path is appended to body in delivery', async () => {
+    upsertAgent(db, mkAgent('%a', 'a'));
+    upsertAgent(db, mkAgent('%b', 'b'));
+    await sendDmTool(ctx('%a'), { to_agent_id: '%b', body: 'see this', image_path: '/tmp/x.png' });
+    expect(sentKeys[0].body).toMatch(/\[image: \/tmp\/x\.png\]/);
+  });
+});
+
+describe('send_message · M2 image support', () => {
+  it('image_path stored on message + appended in delivery', async () => {
+    const g = createGroup(db, { name: 'g' });
+    const t = createTopic(db, { groupId: g.id, title: 't' });
+    upsertAgent(db, mkAgent('%a', 'a', { groupId: g.id }));
+    upsertAgent(db, mkAgent('%b', 'b', { groupId: g.id }));
+    const r = await sendMessageTool(ctx('%a'), { topic_id: t.id, body: 'pic', image_path: '/tmp/y.png' });
+    expect(r.delivered_to).toEqual(['%b']);
+    expect(sentKeys[0].body).toMatch(/\[image: \/tmp\/y\.png\]/);
   });
 });
 

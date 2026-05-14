@@ -3,7 +3,10 @@ import os from 'node:os';
 import path from 'node:path';
 import fs from 'node:fs';
 import { openDb, closeDb } from './db.js';
-import { createGroup, listGroups, getGroup, getGroupByName, deleteGroup } from './groups.js';
+import {
+  createGroup, listGroups, getGroup, getGroupByName, deleteGroup,
+  getOrCreateDmGroup, listDmGroups, listNonDmGroups,
+} from './groups.js';
 
 let dbPath: string;
 let db: ReturnType<typeof openDb>;
@@ -54,5 +57,26 @@ describe('groups catalog', () => {
     const g = createGroup(db, { name: 'x' });
     deleteGroup(db, g.id);
     expect(getGroup(db, g.id)).toBeNull();
+  });
+});
+
+describe('DM groups', () => {
+  it('getOrCreateDmGroup creates first time', () => {
+    const dm = getOrCreateDmGroup(db, '%1', '%0');
+    expect(dm.isDm).toBe(true);
+    expect(dm.name).toBe('dm:%0:%1'); // sorted
+  });
+
+  it('getOrCreateDmGroup is idempotent regardless of arg order', () => {
+    const a = getOrCreateDmGroup(db, '%1', '%0');
+    const b = getOrCreateDmGroup(db, '%0', '%1');
+    expect(b.id).toBe(a.id);
+  });
+
+  it('listDmGroups vs listNonDmGroups separate', () => {
+    createGroup(db, { name: 'team' });
+    getOrCreateDmGroup(db, '%0', '%1');
+    expect(listNonDmGroups(db).map(g => g.name)).toEqual(['team']);
+    expect(listDmGroups(db).map(g => g.name)).toEqual(['dm:%0:%1']);
   });
 });

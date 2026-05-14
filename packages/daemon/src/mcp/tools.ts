@@ -9,7 +9,7 @@ import {
   listTopicsByGroup, listAllTopics, createTopic as dbCreateTopic, getTopic, resolveTopic as dbResolveTopic,
 } from '../store/topics.js';
 import { insertMessage, listMessagesByTopic, listUnreadMessages, markRead } from '../store/messages.js';
-import { listGroups } from '../store/groups.js';
+import { listGroups, getOrCreateDmGroup } from '../store/groups.js';
 
 type BroadcastFn = (event: ServerEvent) => void;
 
@@ -70,6 +70,7 @@ export function listTopicsTool(ctx: ToolContext, args: ListTopicsArgs = {}): Lis
 export interface SendMessageArgs {
   topic_id: string;
   body: string;
+  image_path?: string;
 }
 
 export interface SendMessageResult {
@@ -87,6 +88,7 @@ export async function sendMessageTool(ctx: ToolContext, args: SendMessageArgs): 
     topicId: topic.id,
     fromAgentId: ctx.callerAgentId,
     body: args.body,
+    imagePath: args.image_path ?? null,
   });
 
   // 广播
@@ -95,14 +97,14 @@ export async function sendMessageTool(ctx: ToolContext, args: SendMessageArgs): 
   // 派送给同 group 的其他在线 agent(tmux send-keys 通知文本)
   const fromAgent = ctx.callerAgentId ? getAgent(ctx.db, ctx.callerAgentId) : null;
   const fromName = fromAgent?.name ?? 'human';
+  const imgSuffix = args.image_path ? ` [image: ${args.image_path}]` : '';
   const delivered: string[] = [];
   const recipients = listOnlineAgents(ctx.db).filter(
     a => a.groupId === topic.groupId && a.id !== ctx.callerAgentId,
   );
   for (const r of recipients) {
     try {
-      // 不送 Enter,只塞文本到 pane;agent 自己决定是否回应
-      await ctx.sendKeys(r.tmuxTarget, `\n[from @${fromName}] ${args.body}\n`);
+      await ctx.sendKeys(r.tmuxTarget, `\n[from @${fromName}] ${args.body}${imgSuffix}\n`);
       delivered.push(r.id);
     } catch (e) {
       console.warn(`[send_message] failed to deliver to ${r.id}:`, e);
@@ -110,6 +112,69 @@ export async function sendMessageTool(ctx: ToolContext, args: SendMessageArgs): 
   }
 
   return { message_id: msg.id, delivered_to: delivered };
+}
+
+// ── tool 7: send_dm(1v1 私聊)────────────────────────
+
+export interface SendDmArgs {
+  to_agent_id: string;
+  body: string;
+  image_path?: string;
+}
+
+export interface SendDmResult {
+  topic_id: string;
+  message_id: number;
+  delivered: boolean;
+}
+
+export async function sendDmTool(ctx: ToolContext, args: SendDmArgs): Promise<SendDmResult> {
+  if (!ctx.callerAgentId) throw new Error('send_dm requires a caller agent (DM 不支持 human 发起,用 send_message 走 group)');
+  if (args.to_agent_id === ctx.callerAgentId) throw new Error('cannot DM yourself');
+  const target = getAgent(ctx.db, args.to_agent_id);
+  if (!target) throw new Error(`target agent ${args.to_agent_id} not found`);
+
+  const dm = getOrCreateDmGroup(ctx.db, ctx.callerAgentId, args.to_agent_id);
+
+  // 把双方都加入这个 dm group(以便 listAgentsByGroup 能找到)
+  // 注:每个 agent 只能在一个 group 里,DM 不能颠覆主 group 归属;
+  // 所以这里 *不* 改 agent.groupId,DM 关联只通过 group.is_dm + name 推断
+  // (双方的 agent 仍属于他们各自的主 group)
+
+  // 找/建当前 open 的 topic;一个 DM 通常只用一个长 topic
+  const topics = listTopicsByGroup(ctx.db, dm.id, { onlyOpen: true });
+  const topic = topics[0] ?? dbCreateTopic(ctx.db, {
+    groupId: dm.id,
+    title: 'DM',
+    createdBy: ctx.callerAgentId,
+  });
+  if (topics.length === 0) {
+    ctx.broadcast({ type: 'topic-created', topic });
+  }
+
+  const msg = insertMessage(ctx.db, {
+    topicId: topic.id,
+    fromAgentId: ctx.callerAgentId,
+    body: args.body,
+    imagePath: args.image_path ?? null,
+  });
+  ctx.broadcast({ type: 'message-created', message: msg });
+
+  // 直送目标 pane
+  const fromAgent = getAgent(ctx.db, ctx.callerAgentId);
+  const fromName = fromAgent?.name ?? ctx.callerAgentId;
+  const imgSuffix = args.image_path ? ` [image: ${args.image_path}]` : '';
+  let delivered = false;
+  if (target.status !== 'gone') {
+    try {
+      await ctx.sendKeys(target.tmuxTarget, `\n[DM @${fromName}] ${args.body}${imgSuffix}\n`);
+      delivered = true;
+    } catch (e) {
+      console.warn(`[send_dm] failed to deliver to ${target.id}:`, e);
+    }
+  }
+
+  return { topic_id: topic.id, message_id: msg.id, delivered };
 }
 
 // ── tool 4: read_topic ─────────────────────────────────

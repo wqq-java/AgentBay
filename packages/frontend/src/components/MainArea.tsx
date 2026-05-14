@@ -4,7 +4,7 @@
 //  - 选了 agent → 显示 agent 详情 + 发文本到 pane
 //  - 都没选 → 空态指引
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../store/state.js';
 import {
   createTopic, sendKeystrokes, addAgentToGroup, createGroup,
@@ -244,7 +244,10 @@ function TopicView({ topicId }: { topicId: string }) {
   const messages = useAppStore(s => s.messagesByTopic[topicId] ?? []);
   const agents = useAppStore(s => s.agents);
   const setMessages = useAppStore(s => s.setMessages);
+  const applyEvent = useAppStore(s => s.applyEvent);
   const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!topicId) return;
@@ -255,30 +258,82 @@ function TopicView({ topicId }: { topicId: string }) {
       .finally(() => setLoading(false));
   }, [topicId, setMessages]);
 
+  // 自动滚到最新消息
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages.length]);
+
+  async function toggleResolve() {
+    if (!topic) return;
+    try {
+      if (topic.state === 'open') {
+        const r = await fetch(`/api/topics/${encodeURIComponent(topic.id)}/resolve`, { method: 'POST' });
+        if (!r.ok) throw new Error(`resolve ${r.status}`);
+        const d = await r.json() as { topic: Topic };
+        applyEvent({ type: 'topic-updated', topic: d.topic });
+      }
+    } catch (e) { setErr((e as Error).message); }
+  }
+
   if (!topic) return <div className="empty-view">topic 不存在</div>;
+
+  // 计算消息时间分组(按日期分隔)
+  const grouped: Array<{ dateLabel: string; messages: Message[] }> = [];
+  for (const m of messages) {
+    const dateLabel = new Date(m.ts).toLocaleDateString();
+    const last = grouped[grouped.length - 1];
+    if (last && last.dateLabel === dateLabel) {
+      last.messages.push(m);
+    } else {
+      grouped.push({ dateLabel, messages: [m] });
+    }
+  }
 
   return (
     <div className="topic-view">
       <div className="topic-head">
         <h2>{topic.title}</h2>
         <span className={`badge state-${topic.state}`}>{topic.state}</span>
+        {topic.state === 'open' && (
+          <button className="btn small" onClick={toggleResolve}>标记 resolved</button>
+        )}
       </div>
+      {err && <div className="err">{err}</div>}
       <div className="messages">
         {loading && <em className="muted">加载中…</em>}
         {!loading && messages.length === 0 && <em className="muted">还没消息</em>}
-        {messages.map(m => (
-          <MessageRow key={m.id} message={m} agentName={m.fromAgentId ? (agents[m.fromAgentId]?.name ?? m.fromAgentId) : 'human'} />
+        {grouped.map((g, i) => (
+          <div key={i} className="msg-group">
+            <div className="msg-date-sep">{g.dateLabel}</div>
+            {g.messages.map(m => (
+              <MessageRow
+                key={m.id}
+                message={m}
+                agentName={m.fromAgentId ? (agents[m.fromAgentId]?.name ?? m.fromAgentId) : 'human'}
+              />
+            ))}
+          </div>
         ))}
+        <div ref={messagesEndRef} />
       </div>
     </div>
   );
 }
 
 function MessageRow({ message, agentName }: { message: Message; agentName: string }) {
+  const isImage = message.kind === 'image' || !!message.imagePath;
   return (
     <div className="msg-row">
       <span className="msg-from">@{agentName}</span>
-      <span className="msg-body">{message.body}</span>
+      <div className="msg-body-wrap">
+        <span className="msg-body">{message.body}</span>
+        {isImage && message.imagePath && (
+          <div className="msg-image">
+            <img src={`file://${message.imagePath}`} alt="" onError={e => (e.currentTarget.style.display = 'none')} />
+            <div className="msg-image-path">{message.imagePath}</div>
+          </div>
+        )}
+      </div>
       <span className="msg-ts">{new Date(message.ts).toLocaleTimeString()}</span>
     </div>
   );

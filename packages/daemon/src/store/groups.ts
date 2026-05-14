@@ -53,3 +53,27 @@ export function getGroupByName(db: Database.Database, name: string): Group | nul
 export function deleteGroup(db: Database.Database, id: string): void {
   db.prepare(`DELETE FROM groups WHERE id = ?`).run(id);
 }
+
+/**
+ * 取或建一个两 agent 之间的 DM(隐藏 group)。
+ * 命名规则:`dm:<sortedId1>:<sortedId2>`,保证幂等。
+ */
+export function getOrCreateDmGroup(
+  db: Database.Database,
+  agentIdA: string,
+  agentIdB: string,
+): Group {
+  const [a, b] = [agentIdA, agentIdB].sort();
+  const dmName = `dm:${a}:${b}`;
+  const existing = getGroupByName(db, dmName);
+  if (existing) return existing;
+  return createGroup(db, { name: dmName, isDm: true, description: null });
+}
+
+export function listDmGroups(db: Database.Database): Group[] {
+  return db.prepare<[], Row>(`SELECT * FROM groups WHERE is_dm = 1 ORDER BY created_at ASC`).all().map(rowToGroup);
+}
+
+export function listNonDmGroups(db: Database.Database): Group[] {
+  return db.prepare<[], Row>(`SELECT * FROM groups WHERE is_dm = 0 ORDER BY created_at ASC`).all().map(rowToGroup);
+}

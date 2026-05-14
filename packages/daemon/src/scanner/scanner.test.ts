@@ -43,7 +43,7 @@ function mkPane(paneId: string, command = 'claude', extra: Partial<TmuxPane> = {
 describe('scanner', () => {
   it('first tick creates agents for new panes', async () => {
     const scanner = createScanner({
-      db, broadcast,
+      db, broadcast, captureSource: async () => '',
       paneSource: async () => [mkPane('%0'), mkPane('%1')],
     });
     const result = await scanner.tick();
@@ -54,7 +54,7 @@ describe('scanner', () => {
 
   it('second tick on same panes does not broadcast', async () => {
     const panes = [mkPane('%0')];
-    const scanner = createScanner({ db, broadcast, paneSource: async () => panes });
+    const scanner = createScanner({ db, broadcast, paneSource: async () => panes, captureSource: async () => '' });
     await scanner.tick();
     events.length = 0; broadcast.mockClear();
     const result = await scanner.tick();
@@ -65,7 +65,7 @@ describe('scanner', () => {
 
   it('disappeared pane marked gone', async () => {
     let panes = [mkPane('%0'), mkPane('%1')];
-    const scanner = createScanner({ db, broadcast, paneSource: async () => panes });
+    const scanner = createScanner({ db, broadcast, paneSource: async () => panes, captureSource: async () => '' });
     await scanner.tick();
     events.length = 0;
 
@@ -78,7 +78,7 @@ describe('scanner', () => {
 
   it('returning pane(gone → online again) broadcasts agent-updated', async () => {
     let panes = [mkPane('%0')];
-    const scanner = createScanner({ db, broadcast, paneSource: async () => panes });
+    const scanner = createScanner({ db, broadcast, paneSource: async () => panes, captureSource: async () => '' });
     await scanner.tick();
     panes = [];
     await scanner.tick(); // marked gone
@@ -86,13 +86,15 @@ describe('scanner', () => {
 
     panes = [mkPane('%0')];
     await scanner.tick();
-    expect(getAgent(db, '%0')?.status).toBe('online');
+    // status 检测后会立刻 detectStatus 把 online 改成 idle(空 capture)
+    // 关键是不再是 gone,且广播了 agent-updated
+    expect(getAgent(db, '%0')?.status).not.toBe('gone');
     expect(events.some(e => e.type === 'agent-updated')).toBe(true);
   });
 
   it('infers tool from command', async () => {
     const scanner = createScanner({
-      db, broadcast,
+      db, broadcast, captureSource: async () => '',
       paneSource: async () => [
         mkPane('%0', 'claude'),
         mkPane('%1', 'codex'),
@@ -107,7 +109,7 @@ describe('scanner', () => {
 
   it('preserves user-set name when re-detected', async () => {
     const panes = [mkPane('%0', 'claude', { title: 'claude' })];
-    const scanner = createScanner({ db, broadcast, paneSource: async () => panes });
+    const scanner = createScanner({ db, broadcast, paneSource: async () => panes, captureSource: async () => '' });
     await scanner.tick();
     db.prepare(`UPDATE agents SET name = 'frontend' WHERE id = '%0'`).run();
     await scanner.tick();
@@ -117,7 +119,7 @@ describe('scanner', () => {
   it('preserves groupId when re-detected', async () => {
     db.exec(`INSERT INTO groups (id, name, is_dm, created_at) VALUES ('g1', 'team', 0, ${Date.now()})`);
     const panes = [mkPane('%0')];
-    const scanner = createScanner({ db, broadcast, paneSource: async () => panes });
+    const scanner = createScanner({ db, broadcast, paneSource: async () => panes, captureSource: async () => '' });
     await scanner.tick();
     db.prepare(`UPDATE agents SET group_id = 'g1' WHERE id = '%0'`).run();
     await scanner.tick();

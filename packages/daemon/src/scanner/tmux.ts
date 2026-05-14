@@ -76,10 +76,29 @@ export async function listPanes(): Promise<TmuxPane[]> {
  * 注意:`claude` 进程的 pane_current_command 通常是 'node'(因为是 node CLI),
  * 所以也得看 title 和 cmdline。M1 用粗略启发,后续可扩展。
  */
+// CC 工作中给 pane title 设置的小图标(同时也是 status 检测用的)
+const CC_TITLE_MARKERS = /^[\s]*[✻✶✽✳·*][\s]/;
+
+// CC 实际跑的进程是 node,pane_current_command 看到的常常是版本号(如 "2.1.140")
+// 或 'node'。靠 title 更准。Codex 类似。
 export function inferTool(pane: { command: string; title: string }): AgentTool {
-  const haystack = `${pane.command} ${pane.title}`.toLowerCase();
-  if (haystack.includes('claude')) return 'claude-code';
-  if (haystack.includes('codex')) return 'codex';
+  const titleHay = pane.title.toLowerCase();
+  const commandHay = pane.command.toLowerCase();
+
+  // 强信号:title 里有 "claude"/"codex" 字样
+  if (titleHay.includes('claude')) return 'claude-code';
+  if (titleHay.includes('codex')) return 'codex';
+  if (commandHay.includes('claude')) return 'claude-code';
+  if (commandHay.includes('codex')) return 'codex';
+
+  // 弱信号:title 以 CC 工作标记开头(✳ ✻ ✶ 等)
+  if (CC_TITLE_MARKERS.test(pane.title)) return 'claude-code';
+
+  // command 是 X.Y.Z 形式 + title 非空 → 很可能是 CC(它把 process title 设成版本号)
+  if (/^\d+\.\d+\.\d+$/.test(pane.command) && pane.title.trim().length > 0) {
+    return 'claude-code';
+  }
+
   return 'unknown';
 }
 
