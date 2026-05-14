@@ -173,6 +173,12 @@ export async function ensureTmuxSession(sessionName: string): Promise<void> {
  * - cwd 决定窗口的初始工作目录
  * - command 是 shell 字符串(可以带参数)
  * - 返回的 pane id 形如 '%7'
+ *
+ * 关键:命令通过 `<SHELL> -ic '<cmd>'` 包装,这样:
+ *   - 新 pane 加载用户 .zshrc / .bashrc / .bash_profile,继承 ANTHROPIC_BASE_URL /
+ *     HTTPS_PROXY 等用户环境(否则 tmux server 是 daemon 起的,env 是 daemon 当时的
+ *     env,跟用户当前 shell env 可能不一致)
+ *   - claude 拿到正确 auth env(否则会 403 "Please run /login")
  */
 export async function newWindowWithCommand(opts: {
   sessionName: string;
@@ -182,10 +188,15 @@ export async function newWindowWithCommand(opts: {
 }): Promise<{ paneId: string; windowIndex: number }> {
   const escWindow = (opts.windowName ?? 'worker').replace(/'/g, `'"'"'`);
   const escCwd = opts.cwd.replace(/'/g, `'"'"'`);
-  const escCmd = opts.command.replace(/'/g, `'"'"'`);
-  // -P 让 tmux 打印新 pane 的格式化信息
+  // 包一层 interactive shell;命令里的单引号转义两次
+  const shell = process.env.SHELL ?? '/bin/zsh';
+  // 命令内部的单引号需要 shell 转义("'" → '\''),然后整个再被 tmux 的单引号包起来
+  const innerEsc = opts.command.replace(/'/g, `'\\''`);
+  const wrapped = `${shell} -ic '${innerEsc}'`;
+  const escWrapped = wrapped.replace(/'/g, `'"'"'`);
+
   const { stdout } = await pexec(
-    `tmux new-window -t '${opts.sessionName}:' -n '${escWindow}' -c '${escCwd}' -P -F '#{pane_id}|#{window_index}' '${escCmd}'`,
+    `tmux new-window -t '${opts.sessionName}:' -n '${escWindow}' -c '${escCwd}' -P -F '#{pane_id}|#{window_index}' '${escWrapped}'`,
   );
   const trimmed = stdout.trim();
   const [paneId, winIdx] = trimmed.split('|');
